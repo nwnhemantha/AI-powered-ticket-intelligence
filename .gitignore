@@ -1,0 +1,4 @@
+# Secrets and dependencies — never commit
+backend/.env
+backend/node_modules/
+frontend/keys/

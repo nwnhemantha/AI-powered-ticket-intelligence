@@ -1,0 +1,201 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Ticket Intelligence</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header-row">
+        <h2>Jira ticket intelligence</h2>
+        <button id="logoutBtn" class="logout-ghost hidden">Logout</button>
+      </div>
+
+      <nav class="tabs" aria-label="Popup sections">
+        <button id="tabAnalyzeBtn" class="tab-btn tab-btn-active" type="button">
+          Analyzer
+        </button>
+        <button id="tabLogsBtn" class="tab-btn" type="button">Logs</button>
+      </nav>
+
+      <section id="analyzeTab" class="tab-panel">
+        <div id="statusText" class="meta"></div>
+        <section class="service-status-board" aria-label="Connection status">
+          <article
+            id="backendStatus"
+            class="service-status-card status-checking"
+          >
+            <div class="service-status-header">
+              <span class="service-dot" aria-hidden="true"></span>
+              <span class="service-name">Backend</span>
+              <span class="service-pill">Checking</span>
+            </div>
+            <div class="service-detail">Verifying backend connectivity...</div>
+          </article>
+        </section>
+
+        <button id="loginBtn" class="primary">Connect to Jira</button>
+
+        <div id="loading" class="meta hidden">Loading...</div>
+
+        <div id="supportTool" class="support-tool hidden">
+          <div
+            id="aiOverlay"
+            class="ai-overlay hidden"
+            aria-live="polite"
+            aria-label="Analysis in progress"
+          >
+            <div class="ai-overlay-card">
+              <div class="ai-spinner-wrap">
+                <div class="ai-ring ai-ring-1"></div>
+                <div class="ai-ring ai-ring-2"></div>
+                <span class="ai-core">JIRA</span>
+              </div>
+              <p class="ai-overlay-title">Analyzing tickets</p>
+              <ul class="ai-steps" id="aiStepList">
+                <li class="ai-step" data-step="0">
+                  <span class="ai-step-dot"></span>Reading support request
+                </li>
+                <li class="ai-step" data-step="1">
+                  <span class="ai-step-dot"></span>Searching Jira tickets
+                </li>
+                <li class="ai-step" data-step="2">
+                  <span class="ai-step-dot"></span>Classifying request
+                </li>
+                <li class="ai-step" data-step="3">
+                  <span class="ai-step-dot"></span>Preparing suggestions
+                </li>
+                <li class="ai-step" data-step="4">
+                  <span class="ai-step-dot"></span>Finalizing results
+                </li>
+              </ul>
+            </div>
+          </div>
+          <label class="support-label" for="analyzeProjectSelect"
+            >Project</label
+          >
+          <select id="analyzeProjectSelect" class="text-input">
+            <option value="">All projects</option>
+          </select>
+          <div id="ticketInputSection" class="hidden">
+            <label class="support-label" for="supportTicketInput"
+              >Support Ticket</label
+            >
+            <textarea
+              id="supportTicketInput"
+              rows="10"
+              placeholder="Insert support request text here..."
+            ></textarea>
+            <button id="validateTicketBtn" class="validate-btn">
+              Run Analysis
+            </button>
+          </div>
+          <section id="ticketClassification" class="classification-card hidden">
+            <h3>Automatic classification</h3>
+            <div id="classificationIntent" class="suggestion-item"></div>
+            <div id="classificationCategory" class="suggestion-item"></div>
+            <div id="classificationSentiment" class="suggestion-item"></div>
+          </section>
+          <button
+            id="exportMatchesBtn"
+            class="export-btn hidden"
+            type="button"
+            disabled
+          >
+            Export matching links (Excel)
+          </button>
+          <div id="validationMeta" class="meta hidden"></div>
+          <div id="validationResults" class="validation-results hidden"></div>
+          <section id="smartSuggestions" class="smart-suggestions hidden">
+            <h3>Smart suggestions</h3>
+            <div id="suggestionsMeta" class="meta"></div>
+            <div id="suggestedPriority" class="suggestion-item"></div>
+            <div id="suggestedLabels" class="suggestion-item"></div>
+            <div id="suggestedAssignee" class="suggestion-item"></div>
+            <button
+              id="applyAllSuggestionsBtn"
+              class="apply-all-btn"
+              type="button"
+            >
+              Apply all suggestions to draft
+            </button>
+          </section>
+
+          <section id="issueDraft" class="issue-draft hidden">
+            <h3>Create issue draft</h3>
+            <label class="support-label" for="draftSummary">Summary</label>
+            <input id="draftSummary" class="text-input" type="text" />
+
+            <label class="support-label" for="draftDescription"
+              >Description</label
+            >
+            <textarea id="draftDescription" rows="6"></textarea>
+
+            <label class="support-label" for="draftPriority">Priority</label>
+            <select id="draftPriority" class="text-input">
+              <option value="Highest">Highest</option>
+              <option value="High">High</option>
+              <option value="Medium" selected>Medium</option>
+              <option value="Low">Low</option>
+              <option value="Lowest">Lowest</option>
+            </select>
+
+            <label class="support-label" for="draftLabels"
+              >Labels (comma-separated)</label
+            >
+            <input id="draftLabels" class="text-input" type="text" />
+
+            <label class="support-label" for="draftAssignee">Assignee</label>
+            <input
+              id="draftAssignee"
+              class="text-input"
+              type="text"
+              placeholder="e.g. user@example.com"
+            />
+
+            <label class="support-label" for="draftTargetIssueKey"
+              >Project</label
+            >
+            <select id="draftTargetIssueKey" class="text-input">
+              <option value="">Select a project</option>
+            </select>
+            <div id="projectMeta" class="meta"></div>
+
+            <div class="draft-actions">
+              <button
+                id="insertDraftBtn"
+                class="insert-draft-btn"
+                type="button"
+              >
+                Create ticket in Jira
+              </button>
+              <button id="resetDraftBtn" class="draft-reset-btn" type="button">
+                Reset draft
+              </button>
+            </div>
+            <div id="draftMeta" class="meta"></div>
+          </section>
+
+          <div id="successBanner" class="success-banner hidden"></div>
+        </div>
+
+        <div id="error" class="error"></div>
+      </section>
+
+      <section id="logsTab" class="tab-panel hidden" aria-label="Runtime logs">
+        <div class="logs-toolbar">
+          <button id="copyLogsBtn" class="log-action-btn" type="button">
+            Copy logs
+          </button>
+          <button id="clearLogsBtn" class="log-action-btn" type="button">
+            Clear logs
+          </button>
+        </div>
+        <pre id="logsOutput" class="logs-output">No logs yet.</pre>
+      </section>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -182,8 +182,8 @@ function setServiceStatus(
     `<div class="service-status-header">` +
     `<span class="service-dot" aria-hidden="true"></span>` +
     `<span class="service-name">${escapeHtml(serviceName)}</span>` +
-    `<span class="service-pill">${stateLabel}</span>` +
     `</div>` +
+    `<span class="service-pill">${stateLabel}</span>` +
     `<div class="service-detail">${escapeHtml(detail || "Unknown status")}</div>` +
     metaMarkup;
 }
@@ -993,9 +993,15 @@ function setConnectedState(isConnected) {
   document
     .getElementById("supportTool")
     .classList.toggle("hidden", !isConnected);
-  document.getElementById("statusText").innerText = isConnected
-    ? "Connected to Jira"
-    : "Connect Jira to run AI analysis.";
+ const jiraStatusEl = document.getElementById("jiraStatus");
+  if (jiraStatusEl) {
+    setServiceStatus(
+      jiraStatusEl,
+      "Jira",
+      isConnected ? "connected" : "disconnected",
+      isConnected ? "Authenticated successfully" : "Not connected"
+    );
+  }
   if (!isConnected) {
     renderWorkspaceState([], "Connect to Jira to load workspaces.");
     hideValidationResults();
@@ -1392,8 +1398,8 @@ function renderSmartSuggestions(suggestions) {
 
   const labelsMarkup = sanitizedLabelValues.length
     ? sanitizedLabelValues
-        .map((l) => `<span class="chip">${escapeHtml(l)}</span>`)
-        .join("")
+      .map((l) => `<span class="chip">${escapeHtml(l)}</span>`)
+      .join("")
     : `<span class="chip">needs-triage</span>`;
 
   document.getElementById("suggestedLabels").innerHTML =
@@ -1565,15 +1571,15 @@ function toAdfDocument(text) {
     type: "doc",
     content: lines.length
       ? lines.map((line) => ({
-          type: "paragraph",
-          content: [{ type: "text", text: line }],
-        }))
+        type: "paragraph",
+        content: [{ type: "text", text: line }],
+      }))
       : [
-          {
-            type: "paragraph",
-            content: [{ type: "text", text: "No description provided." }],
-          },
-        ],
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "No description provided." }],
+        },
+      ],
   };
 }
 

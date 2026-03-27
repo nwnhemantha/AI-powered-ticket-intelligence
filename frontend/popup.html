@@ -26,7 +26,9 @@
               >🌙</span
             >
           </label>
-          <button id="logoutBtn" class="logout-ghost hidden">Logout</button>
+          <button id="logoutBtn" class="logout-ghost hidden">
+            <img src="icons/logout.png" class="logout-img"/>
+          </button>
         </div>
       </div>
 
@@ -34,12 +36,20 @@
         <button id="tabAnalyzeBtn" class="tab-btn tab-btn-active" type="button">
           AI Analyzer
         </button>
-        <button id="tabLogsBtn" class="tab-btn" type="button">Logs</button>
+        <button id="tabLogsBtn" class="tab-btn tab-logs" type="button">Logs</button>
       </nav>
 
       <section id="analyzeTab" class="tab-panel">
-        <div id="statusText" class="meta"></div>
+        <!-- <div id="statusText" class="meta"></div> -->
         <section class="service-status-board" aria-label="Connection status">
+          <article id="jiraStatus" class="service-status-card status-disconnected">
+            <div class="service-status-header">
+              <span class="service-dot"></span>
+              <span class="service-name">Jira</span>
+            </div>
+            <span class="service-pill">Disconnected</span>
+            <div class="service-detail">Not connected</div>
+          </article>
           <article
             id="backendStatus"
             class="service-status-card status-checking"
@@ -47,8 +57,8 @@
             <div class="service-status-header">
               <span class="service-dot" aria-hidden="true"></span>
               <span class="service-name">Backend</span>
-              <span class="service-pill">Checking</span>
             </div>
+            <span class="service-pill">Checking</span>
             <div class="service-detail">Verifying backend connectivity...</div>
           </article>
           <article
@@ -58,8 +68,8 @@
             <div class="service-status-header">
               <span class="service-dot" aria-hidden="true"></span>
               <span class="service-name">Vector DB</span>
-              <span class="service-pill">Checking</span>
             </div>
+            <span class="service-pill">Checking</span>
             <div class="service-detail">
               Verifying vector DB connectivity...
             </div>
@@ -115,11 +125,12 @@
               PII is redacted before AI processing.
             </div>
           </div>
-          <label class="support-label" for="workspaceSelect">Workspace</label>
-          <select id="workspaceSelect" class="text-input">
-            <option value="">Loading workspaces...</option>
-          </select>
-
+          <div class="field-wrapper">
+            <label class="support-label" for="workspaceSelect">Workspace</label>
+            <select id="workspaceSelect" class="text-input">
+              <option value="">Loading workspaces...</option>
+            </select>
+          </div>
           <div
             id="aiOverlay"
             class="ai-overlay hidden"
@@ -152,21 +163,25 @@
               </ul>
             </div>
           </div>
-          <label class="support-label" for="analyzeProjectSelect"
-            >Project</label
-          >
-          <select id="analyzeProjectSelect" class="text-input">
-            <option value="">All projects</option>
-          </select>
-          <div id="ticketInputSection" class="hidden">
-            <label class="support-label" for="supportTicketInput"
-              >Support Ticket</label
+          <div class="field-wrapper">
+            <label class="support-label" for="analyzeProjectSelect"
+              >Project</label
             >
-            <textarea
-              id="supportTicketInput"
-              rows="10"
-              placeholder="Insert support request text..."
-            ></textarea>
+            <select id="analyzeProjectSelect" class="text-input">
+              <option value="">All projects</option>
+            </select>
+          </div>
+          <div id="ticketInputSection" class="hidden">
+            <div class="field-wrapper">
+              <label class="support-label" for="supportTicketInput"
+                >Support Ticket</label
+              >
+              <textarea
+                id="supportTicketInput"
+                rows="10"
+                placeholder="Insert support request text..."
+              ></textarea>
+            </div>
             <button id="validateTicketBtn" class="validate-btn">
               Run AI Analysis
             </button>
@@ -204,28 +219,37 @@
 
           <section id="issueDraft" class="issue-draft hidden">
             <h3>Create issue draft</h3>
-            <label class="support-label" for="draftSummary">Summary</label>
-            <input id="draftSummary" class="text-input" type="text" />
+            <div class="field-wrapper">
+              <label class="support-label" for="draftSummary">Summary</label>
+              <input id="draftSummary" class="text-input" type="text" />
+            </div>
 
-            <label class="support-label" for="draftDescription"
-              >Description</label
-            >
-            <textarea id="draftDescription" rows="6"></textarea>
+            <div class="field-wrapper">
+              <label class="support-label" for="draftDescription"
+                >Description</label
+              >
+              <textarea id="draftDescription" rows="6"></textarea>
+            </div>
 
-            <label class="support-label" for="draftPriority">Priority</label>
-            <select id="draftPriority" class="text-input">
-              <option value="Highest">Highest</option>
-              <option value="High">High</option>
-              <option value="Medium" selected>Medium</option>
-              <option value="Low">Low</option>
-              <option value="Lowest">Lowest</option>
-            </select>
+            <div class="field-wrapper">
+              <label class="support-label" for="draftPriority">Priority</label>
+              <select id="draftPriority" class="text-input">
+                <option value="Highest">Highest</option>
+                <option value="High">High</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="Low">Low</option>
+                <option value="Lowest">Lowest</option>
+              </select>
+            </div>
 
-            <label class="support-label" for="draftLabels"
-              >Labels (comma-separated)</label
-            >
-            <input id="draftLabels" class="text-input" type="text" />
+            <div class="field-wrapper">
+              <label class="support-label" for="draftLabels"
+                >Labels (comma-separated)</label
+              >
+              <input id="draftLabels" class="text-input" type="text" />
+            </div>
 
+            <div class="field-wrapper">
             <label class="support-label" for="draftAssignee">Assignee</label>
             <input
               id="draftAssignee"
@@ -233,13 +257,16 @@
               type="text"
               placeholder="e.g. user@example.com"
             />
+            </div>
 
-            <label class="support-label" for="draftTargetIssueKey"
-              >Project</label
-            >
-            <select id="draftTargetIssueKey" class="text-input">
-              <option value="">Select a project</option>
-            </select>
+            <div class="field-wrapper">
+              <label class="support-label" for="draftTargetIssueKey"
+                >Project</label
+              >
+              <select id="draftTargetIssueKey" class="text-input">
+                <option value="">Select a project</option>
+              </select>
+            </div>
             <div id="projectMeta" class="meta"></div>
 
             <div class="draft-actions">

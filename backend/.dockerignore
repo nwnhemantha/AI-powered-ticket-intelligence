@@ -1,0 +1,76 @@
+# Node.js
+node_modules
+npm-debug.log
+yarn-error.log
+.npm
+.yarn
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Python cache and artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+venv/
+env/
+ENV/
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+docs/
+documentation/
+
+# Logs and temp files
+*.log
+logs/
+*.tmp
+*.temp
+
+# Testing
+coverage/
+test/
+tests/
+*.test.js
+*.spec.js
+
+# Docker artifacts (don't copy Docker files into the image)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Misc
+.editorconfig
+.eslintrc*
+.prettierrc*
+.stylelintrc*

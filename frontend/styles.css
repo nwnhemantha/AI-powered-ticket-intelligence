@@ -336,8 +336,6 @@ select {
 }
 
 .validate-btn {
-  margin-top: 8px;
-  width: 100%;
   background: #006644;
 }
 
@@ -348,6 +346,71 @@ select {
 .validate-btn:disabled {
   cursor: wait;
   opacity: 0.7;
+}
+
+.button-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.button-group button {
+  flex: 1;
+}
+
+.vector-search-btn {
+  background: #004466;
+}
+
+.vector-search-btn:hover {
+  background: #003355;
+}
+
+.vector-search-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.sync-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #dfe1e6;
+}
+
+.sync-btn {
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: #6554C0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.sync-btn:hover {
+  background: #5243AA;
+}
+
+.sync-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+  background: #9b91cc;
+}
+
+/* Badge for vector results */
+.vector-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: #004466;
+  border-radius: 3px;
+  vertical-align: middle;
 }
 
 .export-btn {

@@ -590,6 +590,214 @@ app.post("/api/process", async (req, res) => {
   }
 });
 
+// ── POST /api/vector-search ───────────────────────────────────────────────────
+// Vector similarity search through VectorDB.
+// Receives: { supportText }
+// Returns:  { rankedMatches, candidateCount, classification: null, suggestions: null, rankingMode: "vector-similarity" }
+app.post("/api/vector-search", async (req, res) => {
+  if (!requireStrings(req.body, ["supportText"], res)) return;
+
+  const supportText = req.body.supportText.trim().slice(0, 4000);
+  if (!supportText || supportText.length < 10) {
+    return res.status(400).json({
+      error: "Support text must be at least 10 characters for vector search",
+    });
+  }
+
+  // Check if VectorDB is configured
+  console.log('[vector-search] Environment check:');
+  console.log('  VECTORDB_URL:', process.env.VECTORDB_URL ? 'SET' : 'NOT SET');
+  console.log('  VECTORDB_PYTHON_PATH:', process.env.VECTORDB_PYTHON_PATH ? 'SET' : 'NOT SET');
+
+  if (!process.env.VECTORDB_URL || !process.env.VECTORDB_PYTHON_PATH) {
+    console.log('[vector-search] Vector search is NOT configured');
+    return res.status(503).json({
+      error: "Vector search is not configured on this server",
+    });
+  }
+
+  console.log('[vector-search] Vector search is configured, proceeding...');
+
+  try {
+    const vectorSearch = require('./vectorSearch');
+
+    // 1. Generate embedding for query
+    const embedding = await vectorSearch.generateQueryEmbedding(supportText);
+
+    // 2. Search for similar tickets
+    const matches = await vectorSearch.similaritySearch(embedding, 5);
+
+    // 3. Get total ticket count
+    const candidateCount = await vectorSearch.getTotalTicketCount();
+
+    // 4. Format results
+    const rankedMatches = vectorSearch.formatVectorResults(matches);
+
+    return res.json({
+      rankedMatches,
+      candidateCount,
+      classification: null, // Vector search doesn't classify
+      suggestions: null, // Vector search doesn't suggest
+      rankingMode: "vector-similarity",
+      siteUrl: "",
+    });
+  } catch (err) {
+    console.error('[vector-search] Error:', err);
+
+    // Provide helpful error messages
+    if (err.code === 'ECONNREFUSED') {
+      return res.status(503).json({
+        error: "VectorDB is not running. Please start the PostgreSQL database.",
+      });
+    }
+
+    return res.status(500).json({
+      error: `Vector search failed: ${err.message}`,
+    });
+  }
+});
+
+// ── POST /api/ingest ──────────────────────────────────────────────────────────
+// Ingest tickets into VectorDB from JSON array.
+// Receives: { tickets: [...], format?: "json"|"csv", template?: string }
+// Returns:  { success: boolean, ingested: number, skipped: number, errors?: [...] }
+app.post("/api/ingest", async (req, res) => {
+  if (!req.body.tickets || !Array.isArray(req.body.tickets)) {
+    return res.status(400).json({
+      error: "Request body must include 'tickets' array",
+    });
+  }
+
+  const { tickets, format, template } = req.body;
+
+  if (tickets.length === 0) {
+    return res.status(400).json({
+      error: "Tickets array cannot be empty",
+    });
+  }
+
+  // Check if VectorDB is configured
+  if (!process.env.VECTORDB_URL || !process.env.VECTORDB_PYTHON_PATH) {
+    return res.status(503).json({
+      error: "Vector ingestion is not configured on this server",
+    });
+  }
+
+  console.log(`[ingest] Starting ingestion of ${tickets.length} tickets`);
+
+  try {
+    const vectorIngest = require('./vectorIngest');
+
+    const result = await vectorIngest.ingestTickets(tickets, {
+      format: format || 'json',
+      template,
+    });
+
+    console.log(`[ingest] Successfully ingested ${result.ingested} tickets (${result.skipped} skipped)`);
+
+    return res.json({
+      success: result.errors.length === 0,
+      ingested: result.ingested,
+      skipped: result.skipped,
+      errors: result.errors.length > 0 ? result.errors : undefined,
+      message: `Successfully ingested ${result.ingested} tickets`,
+    });
+  } catch (err) {
+    console.error('[ingest] Error:', err);
+
+    if (err.code === 'ECONNREFUSED') {
+      return res.status(503).json({
+        error: "VectorDB is not running. Please start the PostgreSQL database.",
+      });
+    }
+
+    return res.status(500).json({
+      error: `Ingestion failed: ${err.message}`,
+    });
+  }
+});
+
+// ── POST /api/sync-to-vectordb ────────────────────────────────────────────────
+// Fetch tickets from Jira and sync them to VectorDB.
+// Receives: Authorization: Bearer <jira_access_token>, body: { workspaceId?, projectKey? }
+// Returns:  { success: boolean, ingested: number, skipped: number, errors?: [...] }
+app.post("/api/sync-to-vectordb", async (req, res) => {
+  const jiraToken = extractBearerToken(req);
+  if (!jiraToken)
+    return res
+      .status(401)
+      .json({ error: "Jira token required in Authorization header" });
+
+  // Check if VectorDB is configured
+  if (!process.env.VECTORDB_URL || !process.env.VECTORDB_PYTHON_PATH) {
+    return res.status(503).json({
+      error: "Vector ingestion is not configured on this server",
+    });
+  }
+
+  const projectKey = (req.body.projectKey || "").trim();
+  if (projectKey && !/^[A-Za-z][A-Za-z0-9]{0,49}$/.test(projectKey)) {
+    return res.status(400).json({ error: "Invalid projectKey format" });
+  }
+
+  console.log(`[sync-to-vectordb] Starting sync${projectKey ? ` for project ${projectKey}` : ""}`);
+
+  try {
+    const { cloudId } = await getWorkspaceContext(
+      jiraToken,
+      req.body.workspaceId,
+    );
+
+    // Fetch all tickets from the project (or workspace)
+    const tickets = await fetchCandidateIssues(
+      cloudId,
+      jiraToken,
+      [], // No keyword filtering for sync
+      projectKey,
+    );
+
+    if (!tickets || tickets.length === 0) {
+      return res.json({
+        success: true,
+        ingested: 0,
+        skipped: 0,
+        message: "No tickets found to sync",
+      });
+    }
+
+    console.log(`[sync-to-vectordb] Fetched ${tickets.length} tickets from Jira, ingesting...`);
+
+    // Ingest tickets into VectorDB
+    const vectorIngest = require('./vectorIngest');
+
+    const result = await vectorIngest.ingestTickets(tickets, {
+      format: 'json',  // Jira API returns JSON data
+    });
+
+    console.log(`[sync-to-vectordb] Successfully ingested ${result.ingested} tickets (${result.skipped} skipped)`);
+
+    return res.json({
+      success: result.errors.length === 0,
+      ingested: result.ingested,
+      skipped: result.skipped,
+      errors: result.errors.length > 0 ? result.errors : undefined,
+      message: `Successfully synced ${result.ingested} tickets to Vector DB`,
+    });
+  } catch (err) {
+    console.error('[sync-to-vectordb] Error:', err);
+
+    if (err.code === 'ECONNREFUSED') {
+      return res.status(503).json({
+        error: "VectorDB is not running. Please start the PostgreSQL database.",
+      });
+    }
+
+    return res.status(500).json({
+      error: `Sync failed: ${err.message}`,
+    });
+  }
+});
+
 // ── POST /api/token ───────────────────────────────────────────────────────────
 // Exchanges an OAuth authorization code for Jira access/refresh tokens.
 // The Atlassian client_secret never leaves this server.
@@ -741,6 +949,13 @@ app.get("/api/status", async (_req, res) => {
 
 // ── START ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`Backend running on http://127.0.0.1:${PORT}`);
+const HOST = process.env.HOST || "0.0.0.0";
+app.listen(PORT, HOST, () => {
+  console.log(`Backend running on http://${HOST}:${PORT}`);
+  console.log('[config] Environment variables:');
+  console.log('  NODE_ENV:', process.env.NODE_ENV);
+  console.log('  VECTORDB_URL:', process.env.VECTORDB_URL ? 'SET' : 'NOT SET');
+  console.log('  VECTORDB_PYTHON_PATH:', process.env.VECTORDB_PYTHON_PATH || 'NOT SET');
+  console.log('  ATLASSIAN_CLIENT_ID:', process.env.ATLASSIAN_CLIENT_ID ? 'SET' : 'NOT SET');
 });
+

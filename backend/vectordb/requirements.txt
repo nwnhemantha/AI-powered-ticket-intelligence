@@ -1,0 +1,15 @@
+# Force CPU-only PyTorch (CRITICAL: must come before sentence-transformers)
+# This prevents downloading 366MB nvidia-cudnn and other CUDA packages
+--index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://pypi.org/simple
+
+# Core embedding dependencies
+torch>=2.0.0
+sentence-transformers>=3.0.0
+numpy>=1.26.0
+python-dotenv>=1.0.1
+
+# Database and ingestion dependencies
+psycopg2-binary>=2.9.9
+pgvector>=0.3.6
+pandas>=2.2.0

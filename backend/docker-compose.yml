@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with pgvector
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ai-ticket-db
+    environment:
+      POSTGRES_USER: vectordb
+      POSTGRES_PASSWORD: vectordb_pass
+      POSTGRES_DB: jira_tickets
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../Hackathon2026/VectorDB/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vectordb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Backend with embedded vectordb
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-ticket-backend
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      VECTORDB_URL: postgresql://vectordb:vectordb_pass@db:5432/jira_tickets
+      VECTORDB_PYTHON_PATH: /app/vectordb
+      ATLASSIAN_CLIENT_ID: ${ATLASSIAN_CLIENT_ID:-your-client-id}
+      ATLASSIAN_CLIENT_SECRET: ${ATLASSIAN_CLIENT_SECRET:-your-client-secret}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      LLM_MODEL: llama3
+      LOG_LEVEL: INFO
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Mount source code for hot-reload during development
+      - ./server.js:/app/server.js
+      - ./vectorSearch.js:/app/vectorSearch.js
+      - ./vectorIngest.js:/app/vectorIngest.js
+      - ./vectordb:/app/vectordb
+    command: node --watch server.js
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

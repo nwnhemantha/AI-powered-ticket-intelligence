@@ -93,9 +93,20 @@
               rows="10"
               placeholder="Insert support request text here..."
             ></textarea>
-            <button id="validateTicketBtn" class="validate-btn">
-              Run Analysis
-            </button>
+            <div class="button-group">
+              <button id="validateTicketBtn" class="validate-btn">
+                Run Analysis
+              </button>
+              <button id="vectorSearchBtn" class="vector-search-btn">
+                Vector Search
+              </button>
+            </div>
+            <!-- <div class="sync-section">
+              <button id="syncToVectorDbBtn" class="sync-btn" title="Fetch tickets from selected project and sync to Vector DB">
+                Sync to Vector DB
+              </button>
+              <div id="syncStatus" class="meta hidden"></div>
+            </div> -->
           </div>
           <section id="ticketClassification" class="classification-card hidden">
             <h3>Automatic classification</h3>

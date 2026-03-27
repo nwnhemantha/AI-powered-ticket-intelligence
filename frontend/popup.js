@@ -34,6 +34,12 @@ document
   .getElementById("validateTicketBtn")
   .addEventListener("click", validateSupportTicket);
 document
+  .getElementById("vectorSearchBtn")
+  .addEventListener("click", runVectorSearch);
+document
+  .getElementById("syncToVectorDbBtn")
+  .addEventListener("click", syncToVectorDb);
+document
   .getElementById("smartSuggestions")
   .addEventListener("click", handleSuggestionActionClick);
 document
@@ -649,6 +655,159 @@ async function validateSupportTicket() {
   }
 }
 
+// ── VECTOR SEARCH (via VectorDB backend) ──────────────────────────────────────
+async function runVectorSearch() {
+  clearError();
+  hideValidationResults();
+  updateApplyAllButtonState(false);
+
+  const supportText = document
+    .getElementById("supportTicketInput")
+    .value.trim();
+  latestSupportText = supportText;
+
+  if (!supportText) {
+    showError("Please enter support ticket text first.");
+    return;
+  }
+
+  if (supportText.length < 10) {
+    showError("Please enter at least 10 characters for vector search.");
+    return;
+  }
+
+  appendUiLog("info", `Vector search started (${supportText.length} chars)`);
+  setLoading(true);
+  document.getElementById("loading").innerText = "Searching vectors...";
+
+  try {
+    const res = await fetchWithTimeout(
+      `${BACKEND_BASE_URL}/api/vector-search`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ supportText }),
+      },
+      90000,
+    );
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server error (${res.status})`);
+    }
+
+    const {
+      rankedMatches,
+      candidateCount,
+      classification,
+      suggestions,
+      rankingMode,
+      siteUrl,
+    } = await res.json();
+
+    latestClassification = classification;
+    latestSuggestions = suggestions;
+    latestMatches = rankedMatches;
+    latestCandidateCount = candidateCount;
+    latestSiteUrl = siteUrl || "";
+
+    renderVectorResults(rankedMatches, candidateCount);
+    updateExportButtonState(rankedMatches.length > 0, rankedMatches.length > 0);
+
+    // Don't show suggestions/classification for vector search
+    renderSmartSuggestions(null);
+    renderClassification(null);
+    setDraftModeVisible(false); // No draft mode for vector search
+
+    appendUiLog(
+      "info",
+      `Vector search complete: matches=${rankedMatches.length}, total_tickets=${candidateCount}`,
+    );
+  } catch (err) {
+    showError(err.message);
+    appendUiLog("error", `Vector search failed: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ── SYNC TO VECTOR DB ─────────────────────────────────────────────────────────
+async function syncToVectorDb() {
+  clearError();
+
+  const syncBtn = document.getElementById("syncToVectorDbBtn");
+  const syncStatus = document.getElementById("syncStatus");
+
+  const { token } = await chrome.storage.local.get("token");
+  if (!token) {
+    showError("Please connect to Jira first.");
+    return;
+  }
+
+  const selectedWorkspaceId = await getSelectedWorkspaceId();
+  if (!selectedWorkspaceId) {
+    showError("No Jira workspace found. Please reconnect.");
+    return;
+  }
+
+  const projectKey = document.getElementById("analyzeProjectSelect").value || "";
+
+  syncBtn.disabled = true;
+  syncStatus.classList.remove("hidden");
+  syncStatus.innerText = "Fetching tickets from Jira...";
+  appendUiLog("info", `Sync started${projectKey ? ` for project ${projectKey}` : " (all projects)"}`);
+
+  try {
+    const res = await fetchWithTimeout(
+      `${BACKEND_BASE_URL}/api/sync-to-vectordb`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          workspaceId: selectedWorkspaceId,
+          projectKey: projectKey,
+        }),
+      },
+      120000, // 2 minutes timeout
+    );
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Server error (${res.status})`);
+    }
+
+    const { ingested, skipped, errors } = await res.json();
+
+    syncStatus.style.color = "#006644";
+    syncStatus.innerText = `✓ Successfully synced ${ingested} tickets to Vector DB${skipped > 0 ? ` (${skipped} skipped)` : ""}`;
+    appendUiLog("info", `Sync complete: ${ingested} tickets ingested, ${skipped} skipped`);
+
+    if (errors && errors.length > 0) {
+      appendUiLog("warn", `Sync had ${errors.length} errors`);
+    }
+
+    setTimeout(() => {
+      syncStatus.classList.add("hidden");
+    }, 5000);
+  } catch (err) {
+    syncStatus.style.color = "#de350b";
+    syncStatus.innerText = `✗ Sync failed: ${err.message}`;
+    showError(`Sync failed: ${err.message}`);
+    appendUiLog("error", `Sync failed: ${err.message}`);
+
+    setTimeout(() => {
+      syncStatus.classList.add("hidden");
+    }, 8000);
+  } finally {
+    syncBtn.disabled = false;
+  }
+}
+
 // ── CREATE TICKET (via backend proxy) ─────────────────────────────────────────
 async function insertDraftIntoTicket() {
   clearError();
@@ -867,6 +1026,48 @@ function renderValidationResults(matches, candidateCount) {
   validationResults.classList.remove("hidden");
 }
 
+// ── RENDER VECTOR SEARCH RESULTS ──────────────────────────────────────────────
+function renderVectorResults(matches, candidateCount) {
+  const validationMeta = document.getElementById("validationMeta");
+  const validationResults = document.getElementById("validationResults");
+
+  if (!matches.length) {
+    validationMeta.innerText =
+      candidateCount > 0
+        ? `No similar tickets found in ${candidateCount} indexed tickets.`
+        : "VectorDB is empty. Please ingest tickets first.";
+    validationMeta.classList.remove("hidden");
+    validationResults.classList.add("hidden");
+    validationResults.innerHTML = "";
+    updateExportButtonState(false, false);
+    return;
+  }
+
+  validationMeta.innerText = `Top ${matches.length} semantic matches from ${candidateCount} indexed tickets.`;
+  validationMeta.classList.remove("hidden");
+  validationResults.innerHTML = matches
+    .map(
+      ({ issue, score, overlap }) => {
+        // Convert similarity score (0-100) to decimal (0.000-1.000)
+        const similarityFloat = (score / 100).toFixed(3);
+
+        return `
+      <article class="match-card">
+        <div class="issue-header">
+          <span class="issue-key">${escapeHtml(issue.key)}<span class="vector-badge">VECTOR</span></span>
+          <span class="match-score">similarity: ${similarityFloat}</span>
+        </div>
+        <div class="summary">${escapeHtml(issue.fields.summary || "No summary")}</div>
+        <div class="meta">Semantic match | Status: ${escapeHtml(issue.fields.status?.name || issue.fields.status || "Unknown")}</div>
+        ${issue.fields.resolution ? `<div class="meta">Resolution: ${escapeHtml(issue.fields.resolution)}</div>` : ""}
+      </article>`;
+      },
+    )
+    .join("");
+
+  validationResults.classList.remove("hidden");
+}
+
 function updateExportButtonState(isEnabled, isVisible = true) {
   const exportBtn = document.getElementById("exportMatchesBtn");
   exportBtn.classList.toggle("hidden", !isVisible);
@@ -978,13 +1179,13 @@ function renderSmartSuggestions(suggestions) {
   document.getElementById("suggestedPriority").innerHTML =
     `<div class="suggestion-row">` +
     `<div><span class="suggestion-label">Priority:</span> ` +
-    `${escapeHtml(suggestions.priority.value)} ` +
-    `(${suggestions.priority.confidence}% confidence) - ` +
-    `${escapeHtml(suggestions.priority.reason)}</div>` +
+    `${escapeHtml(suggestions.priority?.value || "Medium")} ` +
+    `(${suggestions.priority?.confidence || 0}% confidence) - ` +
+    `${escapeHtml(suggestions.priority?.reason || "No priority analysis available")}</div>` +
     `<button type="button" class="apply-suggestion-btn" data-apply-target="priority">Apply</button>` +
     `</div>`;
 
-  const labelsMarkup = suggestions.labels.values.length
+  const labelsMarkup = suggestions.labels?.values?.length
     ? suggestions.labels.values
         .map((l) => `<span class="chip">${escapeHtml(l)}</span>`)
         .join("")
@@ -994,16 +1195,16 @@ function renderSmartSuggestions(suggestions) {
     `<div class="suggestion-row">` +
     `<div><span class="suggestion-label">Labels:</span> ` +
     `<span class="label-chips">${labelsMarkup}</span> - ` +
-    `${escapeHtml(suggestions.labels.reason)}</div>` +
+    `${escapeHtml(suggestions.labels?.reason || "No label analysis available")}</div>` +
     `<button type="button" class="apply-suggestion-btn" data-apply-target="labels">Apply</button>` +
     `</div>`;
 
   document.getElementById("suggestedAssignee").innerHTML =
     `<div class="suggestion-row">` +
     `<div><span class="suggestion-label">Assignee hint:</span> ` +
-    `${escapeHtml(suggestions.assignee.value)} ` +
-    `(${suggestions.assignee.confidence}% confidence) - ` +
-    `${escapeHtml(suggestions.assignee.reason)}</div>` +
+    `${escapeHtml(suggestions.assignee?.value || "Unassigned")} ` +
+    `(${suggestions.assignee?.confidence || 0}% confidence) - ` +
+    `${escapeHtml(suggestions.assignee?.reason || "No assignee analysis available")}</div>` +
     `<button type="button" class="apply-suggestion-btn" data-apply-target="assignee">Apply</button>` +
     `</div>`;
 
@@ -1076,19 +1277,18 @@ function applySuggestionTarget(target) {
 
   if (target === "priority" || target === "all") {
     const priority =
-      normalizePriorityName(latestSuggestions.priority.value) || "Medium";
+      normalizePriorityName(latestSuggestions.priority?.value) || "Medium";
     document.getElementById("draftPriority").value = priority;
   }
   if (target === "labels" || target === "all") {
-    document.getElementById("draftLabels").value = latestSuggestions.labels
-      .values.length
+    document.getElementById("draftLabels").value = latestSuggestions.labels?.values?.length
       ? latestSuggestions.labels.values.join(", ")
       : "needs-triage";
   }
   if (target === "assignee" || target === "all") {
     const el = document.getElementById("draftAssignee");
-    el.value = latestSuggestions.assignee.value;
-    el.dataset.accountId = latestSuggestions.assignee.accountId || "";
+    el.value = latestSuggestions.assignee?.value || "";
+    el.dataset.accountId = latestSuggestions.assignee?.accountId || "";
   }
 
   draftMeta.innerText =

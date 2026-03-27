@@ -6,6 +6,7 @@
   "description": "AI-powered Jira ticket intelligence that classifies, prioritizes, and suggests actions using Jira and semantic context.",
   "permissions": ["identity", "storage"],
   "host_permissions": [
+    "https://*.atlassian.net/*",
     "https://api.atlassian.com/*",
     "https://auth.atlassian.com/*",
     "https://id.atlassian.com/*",

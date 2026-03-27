@@ -20,6 +20,7 @@ let _stepsAllComplete = false;
 let _notificationTimer = null;
 let analysisMode = "jira"; // jira | vectordb | both
 let currentTheme = "dark"; // dark | light
+let _sessionExpiredHandled = false;
 const MAX_UI_LOG_LINES = 400;
 let uiLogLines = [];
 let _consolePatched = false;
@@ -268,6 +269,42 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 90000) {
   }
 }
 
+function isLikelyAuthFailure(status, message = "") {
+  const m = String(message || "").toLowerCase();
+  if (status === 401 || status === 403) return true;
+  return (
+    m.includes("token expired") ||
+    m.includes("expired token") ||
+    m.includes("oauth 2.0 token") ||
+    m.includes("unauthorized") ||
+    m.includes("forbidden") ||
+    m.includes("invalid token") ||
+    m.includes("authorization")
+  );
+}
+
+async function autoLogoutForExpiredSession() {
+  if (_sessionExpiredHandled) return;
+  _sessionExpiredHandled = true;
+
+  appendUiLog("warn", "Session expired detected. Logging out.");
+  await chrome.storage.local.remove([
+    "token",
+    "refreshToken",
+    "verifier",
+    "oauthState",
+    "selectedWorkspaceId",
+    "selectedProjectKey",
+  ]);
+
+  availableWorkspaces = [];
+  availableProjects = [];
+  setConnectedState(false);
+  renderWorkspaceState([], "Session expired. Please connect to Jira again.");
+  renderProjectState([], "Session expired. Please connect to Jira again.");
+  showError("Session expired. Please connect to Jira again.");
+}
+
 // ── LOGOUT ────────────────────────────────────────────────────────────────────
 async function logout() {
   appendUiLog("info", "Logout requested");
@@ -298,6 +335,7 @@ function base64UrlEncode(buffer) {
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
 async function login() {
   try {
+    _sessionExpiredHandled = false;
     appendUiLog("info", "Login flow started");
     clearError();
     const redirectUri = chrome.identity.getRedirectURL();
@@ -424,6 +462,10 @@ async function loadWorkspaces() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (isLikelyAuthFailure(res.status, err.error)) {
+        await autoLogoutForExpiredSession();
+        return;
+      }
       throw new Error(err.error || `Failed to load workspaces (${res.status})`);
     }
 
@@ -556,7 +598,13 @@ async function syncVectorDB() {
     );
 
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Sync failed (${res.status})`);
+    if (!res.ok) {
+      if (isLikelyAuthFailure(res.status, data.error)) {
+        await autoLogoutForExpiredSession();
+        return;
+      }
+      throw new Error(data.error || `Sync failed (${res.status})`);
+    }
 
     appendUiLog(
       "info",
@@ -600,6 +648,10 @@ async function loadProjectsForWorkspace(workspaceId) {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (isLikelyAuthFailure(res.status, err.error)) {
+        await autoLogoutForExpiredSession();
+        return;
+      }
       throw new Error(err.error || `Failed to load projects (${res.status})`);
     }
 
@@ -764,6 +816,10 @@ async function validateSupportTicket() {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (isLikelyAuthFailure(res.status, err.error)) {
+        await autoLogoutForExpiredSession();
+        return;
+      }
       throw new Error(err.error || `Server error (${res.status})`);
     }
 
@@ -911,6 +967,10 @@ async function insertDraftIntoTicket() {
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
+      if (isLikelyAuthFailure(res.status, errData.error)) {
+        await autoLogoutForExpiredSession();
+        return;
+      }
       throw new Error(errData.error || "Failed to create ticket from draft.");
     }
 

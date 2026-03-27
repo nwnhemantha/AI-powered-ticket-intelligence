@@ -17,6 +17,9 @@ let availableProjects = [];
 let _aiStepTimers = [];
 let _pendingHide = false;
 let _stepsAllComplete = false;
+let _notificationTimer = null;
+let analysisMode = "jira"; // jira | vectordb | both
+let currentTheme = "dark"; // dark | light
 const MAX_UI_LOG_LINES = 400;
 let uiLogLines = [];
 let _consolePatched = false;
@@ -30,6 +33,18 @@ document
 document
   .getElementById("analyzeProjectSelect")
   .addEventListener("change", handleAnalyzeProjectChange);
+document
+  .getElementById("modeJiraBtn")
+  .addEventListener("click", handleModeButtonClick);
+document
+  .getElementById("modeVectorBtn")
+  .addEventListener("click", handleModeButtonClick);
+document
+  .getElementById("modeBothBtn")
+  .addEventListener("click", handleModeButtonClick);
+document
+  .getElementById("syncVectorBtn")
+  .addEventListener("click", syncVectorDB);
 document
   .getElementById("validateTicketBtn")
   .addEventListener("click", validateSupportTicket);
@@ -57,6 +72,9 @@ document.getElementById("tabLogsBtn").addEventListener("click", () => {
 document.getElementById("clearLogsBtn").addEventListener("click", clearLogs);
 document.getElementById("copyLogsBtn").addEventListener("click", copyLogs);
 document
+  .getElementById("themeToggle")
+  .addEventListener("change", handleThemeToggle);
+document
   .getElementById("draftTargetIssueKey")
   .addEventListener("change", handleProjectChange);
 
@@ -64,9 +82,19 @@ document
 async function init() {
   setupConsoleLogMirroring();
   bindGlobalErrorLogging();
+  requestAnimationFrame(() => {
+    document.body.classList.add("motion-ready");
+  });
   // renderOauthDebug();
   appendUiLog("info", "Popup initialized");
-  const { token } = await chrome.storage.local.get("token");
+  const { token, savedAnalysisMode, savedTheme } =
+    await chrome.storage.local.get([
+      "token",
+      "savedAnalysisMode",
+      "savedTheme",
+    ]);
+  applyTheme(savedTheme || "dark");
+  setAnalysisMode(savedAnalysisMode || "jira");
   setConnectedState(!!token);
   setBackendAvailability(false);
   updateExportButtonState(false, false);
@@ -78,6 +106,31 @@ async function init() {
   }
   await refreshConnectionStatus();
   setInterval(refreshConnectionStatus, 15000);
+}
+
+function applyTheme(theme) {
+  currentTheme = theme === "light" ? "light" : "dark";
+  document.body.setAttribute("data-theme", currentTheme);
+
+  const toggle = document.getElementById("themeToggle");
+  const label = document.getElementById("themeToggleIcon");
+  if (toggle) {
+    toggle.checked = currentTheme === "light";
+    toggle.setAttribute(
+      "aria-label",
+      currentTheme === "light" ? "Enable dark theme" : "Enable light theme",
+    );
+  }
+  if (label) {
+    label.innerText = currentTheme === "light" ? "☀️" : "🌙";
+  }
+}
+
+async function handleThemeToggle(event) {
+  const nextTheme = event.target.checked ? "light" : "dark";
+  applyTheme(nextTheme);
+  await chrome.storage.local.set({ savedTheme: nextTheme });
+  appendUiLog("info", `Theme changed: ${nextTheme}`);
 }
 
 function setBackendAvailability(isAvailable) {
@@ -136,6 +189,7 @@ function setServiceStatus(
 
 async function refreshConnectionStatus() {
   const backendEl = document.getElementById("backendStatus");
+  const vectorDbEl = document.getElementById("vectorDbStatus");
 
   try {
     const res = await fetch(`${BACKEND_BASE_URL}/api/status`, {
@@ -150,7 +204,7 @@ async function refreshConnectionStatus() {
     const data = await res.json();
     appendUiLog(
       "info",
-      `Status: backend=${data.backend?.connected ? "up" : "down"}`,
+      `Status: backend=${data.backend?.connected ? "up" : "down"}, vectorDb=${data.vectorDb?.connected ? "up" : "down"}`,
     );
     setBackendAvailability(!!data.backend?.connected);
     setServiceStatus(
@@ -159,11 +213,23 @@ async function refreshConnectionStatus() {
       data.backend?.connected ? "connected" : "disconnected",
       data.backend?.detail || "Unknown",
     );
+    setServiceStatus(
+      vectorDbEl,
+      "Vector DB",
+      data.vectorDb?.connected ? "connected" : "disconnected",
+      data.vectorDb?.detail || "Unknown",
+    );
   } catch {
     appendUiLog("warn", "Status check failed: backend unreachable");
     setServiceStatus(
       backendEl,
       "Backend",
+      "disconnected",
+      "Cannot reach backend service",
+    );
+    setServiceStatus(
+      vectorDbEl,
+      "Vector DB",
       "disconnected",
       "Cannot reach backend service",
     );
@@ -425,6 +491,88 @@ async function handleWorkspaceChange(event) {
   await loadProjectsForWorkspace(workspaceId);
 }
 
+// ── ANALYSIS MODE ─────────────────────────────────────────────────────────────
+function setAnalysisMode(mode) {
+  analysisMode = ["jira", "vectordb", "both"].includes(mode) ? mode : "jira";
+  ["jira", "vectordb", "both"].forEach((m) => {
+    const btn = document.getElementById(
+      m === "jira"
+        ? "modeJiraBtn"
+        : m === "vectordb"
+          ? "modeVectorBtn"
+          : "modeBothBtn",
+    );
+    if (btn) btn.classList.toggle("mode-btn-active", m === analysisMode);
+  });
+  const syncRow = document.getElementById("syncRow");
+  if (syncRow) syncRow.classList.toggle("hidden", analysisMode === "jira");
+}
+
+async function handleModeButtonClick(event) {
+  const mode = event.currentTarget.dataset.mode;
+  if (!mode) return;
+  setAnalysisMode(mode);
+  await chrome.storage.local.set({ savedAnalysisMode: analysisMode });
+  appendUiLog("info", `AI analysis mode set to: ${analysisMode}`);
+}
+
+// ── VECTOR DB SYNC ────────────────────────────────────────────────────────────
+async function syncVectorDB() {
+  const { token } = await chrome.storage.local.get("token");
+  if (!token) {
+    showError("Please connect to Jira first.");
+    return;
+  }
+
+  const selectedWorkspaceId = await getSelectedWorkspaceId();
+  if (!selectedWorkspaceId) {
+    showError("No Jira workspace selected.");
+    return;
+  }
+
+  const btn = document.getElementById("syncVectorBtn");
+  const originalLabel = btn.innerText;
+  btn.disabled = true;
+  btn.innerText = "Syncing...";
+  clearError();
+  appendUiLog("info", "Vector DB sync started...");
+
+  try {
+    const res = await fetchWithTimeout(
+      `${BACKEND_BASE_URL}/api/vectordb/index`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          workspaceId: selectedWorkspaceId,
+          // Sync all projects in the selected workspace/site.
+          projectKey: "",
+        }),
+      },
+      300000,
+    );
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Sync failed (${res.status})`);
+
+    appendUiLog(
+      "info",
+      `Vector DB sync complete: ${data.indexed} issues indexed`,
+    );
+    showSuccess(`Sync complete: ${data.indexed} issues indexed.`);
+    await refreshConnectionStatus();
+  } catch (err) {
+    showError(err.message || "Vector DB sync failed.");
+    appendUiLog("error", `Vector DB sync error: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerText = originalLabel;
+  }
+}
+
 async function loadProjectsForWorkspace(workspaceId) {
   const { token, selectedProjectKey } = await chrome.storage.local.get([
     "token",
@@ -517,7 +665,7 @@ function renderProjectState(projects, message = "", selectedKey = "") {
   analyzeSelect.innerHTML =
     `<option value="">All projects</option>` + projectOptions;
   analyzeSelect.disabled = false;
-  analyzeSelect.value = pickProjectKey(selectedKey) || projects[0].key;
+  analyzeSelect.value = "";
 
   const selectedProject = projects.find(
     (project) => project.key === select.value,
@@ -590,7 +738,7 @@ async function validateSupportTicket() {
     return;
   }
   prefillDraftFromSupportText(supportText);
-  appendUiLog("info", `Analysis started (${supportText.length} chars)`);
+  appendUiLog("info", `AI analysis started (${supportText.length} chars)`);
   setLoading(true);
   document.getElementById("loading").innerText = "Processing...";
 
@@ -608,6 +756,7 @@ async function validateSupportTicket() {
           workspaceId: selectedWorkspaceId,
           projectKey:
             document.getElementById("analyzeProjectSelect").value || "",
+          analysisMode,
         }),
       },
       90000,
@@ -618,30 +767,68 @@ async function validateSupportTicket() {
       throw new Error(err.error || `Server error (${res.status})`);
     }
 
-    const {
-      rankedMatches,
-      candidateCount,
-      classification,
-      suggestions,
-      rankingMode,
-      siteUrl,
-    } = await res.json();
+    const data = await res.json();
 
-    latestClassification = classification;
-    latestSuggestions = suggestions;
-    latestMatches = rankedMatches;
-    latestCandidateCount = candidateCount;
-    latestSiteUrl = siteUrl || "";
+    if (data.analysisMode === "both") {
+      const jiraMatches = data.jiraResult?.rankedMatches || [];
+      const vectorMatches = data.vectorResult?.rankedMatches || [];
+      const totalCandidates =
+        (data.jiraResult?.candidateCount || 0) +
+        (data.vectorResult?.candidateCount || 0);
 
-    renderValidationResults(rankedMatches, candidateCount);
-    updateExportButtonState(rankedMatches.length > 0, rankedMatches.length > 0);
-    renderSmartSuggestions(suggestions);
-    renderClassification(classification);
-    setDraftModeVisible(true);
-    appendUiLog(
-      "info",
-      `Analysis complete: matches=${rankedMatches.length}, candidates=${candidateCount}, ranking=${rankingMode || "n/a"}`,
-    );
+      latestClassification = data.classification;
+      latestSuggestions = data.suggestions;
+      latestMatches = [...jiraMatches, ...vectorMatches];
+      latestCandidateCount = totalCandidates;
+      latestSiteUrl = data.siteUrl || "";
+
+      renderBothResults(
+        jiraMatches,
+        data.jiraResult?.candidateCount || 0,
+        vectorMatches,
+        data.vectorResult?.candidateCount || 0,
+        data.vectorError,
+      );
+      updateExportButtonState(
+        latestMatches.length > 0,
+        latestMatches.length > 0,
+      );
+      renderSmartSuggestions(data.suggestions);
+      renderClassification(data.classification);
+      setDraftModeVisible(true);
+      appendUiLog(
+        "info",
+        `AI analysis complete (both): jira=${jiraMatches.length}, vector=${vectorMatches.length}${data.vectorError ? ", vectorErr=" + data.vectorError : ""}`,
+      );
+    } else {
+      const {
+        rankedMatches,
+        candidateCount,
+        classification,
+        suggestions,
+        rankingMode,
+        siteUrl,
+      } = data;
+
+      latestClassification = classification;
+      latestSuggestions = suggestions;
+      latestMatches = rankedMatches;
+      latestCandidateCount = candidateCount;
+      latestSiteUrl = siteUrl || "";
+
+      renderValidationResults(rankedMatches, candidateCount);
+      updateExportButtonState(
+        rankedMatches.length > 0,
+        rankedMatches.length > 0,
+      );
+      renderSmartSuggestions(suggestions);
+      renderClassification(classification);
+      setDraftModeVisible(true);
+      appendUiLog(
+        "info",
+        `AI analysis complete: matches=${rankedMatches.length}, candidates=${candidateCount}, ranking=${rankingMode || "n/a"}`,
+      );
+    }
   } catch (err) {
     showError(err.message);
   } finally {
@@ -748,7 +935,7 @@ function setConnectedState(isConnected) {
     .classList.toggle("hidden", !isConnected);
   document.getElementById("statusText").innerText = isConnected
     ? "Connected to Jira"
-    : "Connect your Jira account to classify, prioritize, and respond to support requests";
+    : "Connect Jira to run AI analysis.";
   if (!isConnected) {
     renderWorkspaceState([], "Connect to Jira to load workspaces.");
     hideValidationResults();
@@ -810,13 +997,24 @@ function showAiOverlay() {
   );
 }
 
-function hideAiOverlay() {
+function hideAiOverlay(immediate = false) {
+  const overlay = document.getElementById("aiOverlay");
+  const steps = overlay?.querySelectorAll(".ai-step") || [];
+
+  if (immediate) {
+    _aiStepTimers.forEach(clearTimeout);
+    _aiStepTimers = [];
+    _pendingHide = false;
+    _stepsAllComplete = false;
+    overlay?.classList.add("hidden");
+    steps.forEach((s) => s.classList.remove("done", "active"));
+    return;
+  }
+
   if (_stepsAllComplete) {
     // All steps already finished — hide after a brief pause
     _aiStepTimers.forEach(clearTimeout);
     _aiStepTimers = [];
-    const overlay = document.getElementById("aiOverlay");
-    const steps = overlay?.querySelectorAll(".ai-step") || [];
     _aiStepTimers.push(
       setTimeout(() => {
         overlay?.classList.add("hidden");
@@ -833,7 +1031,7 @@ function setDraftModeVisible(isVisible) {
   document.getElementById("issueDraft").classList.toggle("hidden", !isVisible);
 }
 
-function renderValidationResults(matches, candidateCount) {
+function renderValidationResults(matches, candidateCount, sectionLabel = "") {
   const validationMeta = document.getElementById("validationMeta");
   const validationResults = document.getElementById("validationResults");
 
@@ -849,21 +1047,64 @@ function renderValidationResults(matches, candidateCount) {
     return;
   }
 
-  validationMeta.innerText = `Top ${matches.length} matches from ${candidateCount} Jira tickets.`;
+  validationMeta.innerText = sectionLabel
+    ? `${sectionLabel}: ${matches.length} matches.`
+    : `Top ${matches.length} matches from ${candidateCount} Jira tickets.`;
   validationMeta.classList.remove("hidden");
-  validationResults.innerHTML = matches
-    .map(
-      ({ issue, score, overlap }) => `
-      <article class="match-card">
-        <div class="issue-header">
-          <span class="issue-key">${escapeHtml(issue.key)}</span>
-          <span class="match-score">${score}% match</span>
-        </div>
-        <div class="summary">${escapeHtml(issue.fields.summary || "No summary")}</div>
-        <div class="meta">${overlap} keyword overlap | Status: ${escapeHtml(issue.fields.status?.name || "Unknown")}</div>
-      </article>`,
-    )
-    .join("");
+  validationResults.innerHTML = matches.map(renderMatchCard).join("");
+  validationResults.classList.remove("hidden");
+}
+
+function renderMatchCard({ issue, score, overlap, source }) {
+  const sourceBadge = source
+    ? `<span class="match-source-badge match-source-${source}">${source === "vectordb" ? "Vector DB" : "Jira"}</span>`
+    : "";
+  const overlapInfo =
+    source === "vectordb"
+      ? `Semantic score | Status: ${escapeHtml(issue.fields.status?.name || "Unknown")}`
+      : `${overlap} keyword overlap | Status: ${escapeHtml(issue.fields.status?.name || "Unknown")}`;
+  return `
+    <article class="match-card">
+      <div class="issue-header">
+        <span class="issue-key">${escapeHtml(issue.key)}</span>
+        ${sourceBadge}
+        <span class="match-score">${score}%</span>
+      </div>
+      <div class="summary">${escapeHtml(issue.fields.summary || "No summary")}</div>
+      <div class="meta">${overlapInfo}</div>
+    </article>`;
+}
+
+function renderBothResults(
+  jiraMatches,
+  jiraCandidateCount,
+  vectorMatches,
+  vectorCandidateCount,
+  vectorError,
+) {
+  const validationMeta = document.getElementById("validationMeta");
+  const validationResults = document.getElementById("validationResults");
+
+  const jiraHtml = jiraMatches.length
+    ? jiraMatches.map(renderMatchCard).join("")
+    : `<p class="meta">No Jira matches found in ${jiraCandidateCount} tickets.</p>`;
+
+  const vectorHtml = vectorError
+    ? `<p class="meta error-inline">Vector DB error: ${escapeHtml(vectorError)}</p>`
+    : vectorMatches.length
+      ? vectorMatches.map(renderMatchCard).join("")
+      : `<p class="meta">No Vector DB matches found (${vectorCandidateCount} vectors searched).</p>`;
+
+  const totalMatches =
+    jiraMatches.length + (vectorError ? 0 : vectorMatches.length);
+
+  validationMeta.innerText = `Both analyses complete - ${totalMatches} total match(es).`;
+  validationMeta.classList.remove("hidden");
+  validationResults.innerHTML =
+    `<div class="matches-section-header matches-section-jira">Jira matches (${jiraCandidateCount} tickets scanned)</div>` +
+    jiraHtml +
+    `<div class="matches-section-header matches-section-vectordb">Vector DB matches (${vectorCandidateCount} vectors searched)</div>` +
+    vectorHtml;
   validationResults.classList.remove("hidden");
 }
 
@@ -973,7 +1214,7 @@ function renderClassification(classification) {
 
 function renderSmartSuggestions(suggestions) {
   document.getElementById("suggestionsMeta").innerText =
-    "Suggestions source: Jira-based analysis.";
+    "Source: AI (Jira + Vector DB).";
 
   document.getElementById("suggestedPriority").innerHTML =
     `<div class="suggestion-row">` +
@@ -1069,7 +1310,7 @@ function handleSuggestionActionClick(event) {
 
 function applySuggestionTarget(target) {
   if (!latestSuggestions) {
-    showError("Run validation first to generate smart suggestions.");
+    showError("Run AI validation first to generate AI suggestions.");
     return;
   }
   const draftMeta = document.getElementById("draftMeta");
@@ -1144,6 +1385,7 @@ function resetStateAfterCreate(createdKey, siteUrl) {
     `<span class="success-check">&#10003; Ticket created successfully!</span> ` +
     `<a href="${siteUrl}/browse/${createdKey}" target="_blank">View ${createdKey} in Jira &rarr;</a>`;
   banner.classList.remove("hidden");
+  showSuccess(`Ticket ${createdKey} created successfully.`);
   appendUiLog("info", `Jira issue created: ${createdKey}`);
 }
 
@@ -1282,16 +1524,54 @@ async function copyLogs() {
   try {
     await navigator.clipboard.writeText(content);
     appendUiLog("info", "Logs copied to clipboard");
+    showSuccess("Logs copied.");
   } catch {
     appendUiLog("error", "Failed to copy logs to clipboard");
     showError("Could not copy logs to clipboard.");
   }
 }
 
+function showNotification(msg, type = "info", timeoutMs = 4500) {
+  const el = document.getElementById("error");
+  if (!el) return;
+
+  if (_notificationTimer) {
+    clearTimeout(_notificationTimer);
+    _notificationTimer = null;
+  }
+
+  el.className = `notification notification-${type}`;
+  el.innerText = String(msg || "");
+
+  if (timeoutMs > 0) {
+    _notificationTimer = setTimeout(() => {
+      el.classList.add("notification-leaving");
+      _notificationTimer = setTimeout(() => {
+        el.classList.add("hidden");
+        el.classList.remove("notification-leaving");
+        el.innerText = "";
+        _notificationTimer = null;
+      }, 140);
+    }, timeoutMs);
+  }
+}
+
+function showSuccess(msg) {
+  showNotification(msg, "success", 4000);
+}
+
 function showError(msg) {
-  document.getElementById("error").innerText = msg;
+  hideAiOverlay(true);
+  showNotification(msg, "error", 7000);
   appendUiLog("error", msg);
 }
 function clearError() {
-  document.getElementById("error").innerText = "";
+  if (_notificationTimer) {
+    clearTimeout(_notificationTimer);
+    _notificationTimer = null;
+  }
+  const el = document.getElementById("error");
+  if (!el) return;
+  el.classList.add("hidden");
+  el.innerText = "";
 }

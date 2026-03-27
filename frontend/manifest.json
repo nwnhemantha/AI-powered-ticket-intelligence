@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxt7KfSZNLGmhSS+eVF4xA8P/Hogzb/qeaccIh+Vs+QLGyx5WsUdh2oqQaeRYf8oW8Xtby3+NcbniNoeql+wpuVWcB48AnVKzZsUbw44Tp6zSq5RUrtFxqAoH+gQXdJ/j1X9DjfsKnAU1Wp0TRusi3H0QS5KglaTIyWUHXlsWU+nh1R39YcAp96oYf0wfOHj/AQYpDb51BchYYDxVEO7TypI63aUE5w6JEWraGrOrRfLghmHlgYlZYUrXNxwBsessLXTqnvij43tPdwhwskQOD9X2Gwvf4FyANklHomP+lpMy/1OsXQnWEhWN8+Nnt7E7gb9tX13hPz8V+Q/oAgqqawIDAQAB",
-  "name": "Jira ticket intelligence",
+  "name": "AI-powered Jira ticket intelligence",
   "version": "1.0",
-  "description": "Jira ticket intelligence system that classifies and prioritizes support requests using Jira context.",
+  "description": "AI-powered Jira ticket intelligence that classifies, prioritizes, and suggests actions using Jira and semantic context.",
   "permissions": ["identity", "storage"],
   "host_permissions": [
     "https://api.atlassian.com/*",

@@ -358,6 +358,202 @@ function resolveAssigneeAccountId(suggestedName, rankedMatches) {
   return null;
 }
 
+// ── VECTOR DB CONFIG ──────────────────────────────────────────────────────────
+const VECTOR_DB_URL = (
+  process.env.VECTOR_DB_URL || "http://127.0.0.1:6333"
+).replace(/\/+$/, "");
+const VECTOR_DB_COLLECTION = process.env.VECTOR_DB_COLLECTION || "jira_issues";
+const EMBEDDING_PROVIDER = (
+  process.env.EMBEDDING_PROVIDER || "openai"
+).toLowerCase();
+const OPENAI_EMBEDDING_MODEL =
+  process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
+
+async function getEmbedding(text) {
+  const sanitized = redactPII(String(text || "").slice(0, 8192));
+  if (EMBEDDING_PROVIDER === "local") {
+    const localUrl = process.env.LOCAL_EMBEDDING_URL;
+    if (!localUrl) throw new Error("LOCAL_EMBEDDING_URL not configured");
+    const res = await fetch(localUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(process.env.LOCAL_EMBEDDING_MODEL
+          ? { model: process.env.LOCAL_EMBEDDING_MODEL }
+          : {}),
+        input: sanitized,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok)
+      throw new Error(data.error?.message || "Embedding request failed");
+    const vec = data.data?.[0]?.embedding || data.embedding;
+    if (!Array.isArray(vec))
+      throw new Error("Invalid embedding response from local provider");
+    return vec;
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not configured for embeddings");
+  const res = await fetch("https://api.openai.com/v1/embeddings", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model: OPENAI_EMBEDDING_MODEL, input: sanitized }),
+  });
+  const data = await res.json();
+  if (!res.ok)
+    throw new Error(data.error?.message || "OpenAI embedding failed");
+  const vec = data.data?.[0]?.embedding;
+  if (!Array.isArray(vec)) throw new Error("Invalid OpenAI embedding response");
+  return vec;
+}
+
+function hashIssueKey(key) {
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) {
+    h = (((h << 5) + h) ^ key.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
+async function ensureVectorCollection(dim) {
+  const check = await fetch(
+    `${VECTOR_DB_URL}/collections/${VECTOR_DB_COLLECTION}`,
+  );
+  if (check.ok) return;
+  const create = await fetch(
+    `${VECTOR_DB_URL}/collections/${VECTOR_DB_COLLECTION}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vectors: { size: dim, distance: "Cosine" } }),
+    },
+  );
+  if (!create.ok) {
+    const d = await create.json().catch(() => ({}));
+    throw new Error(d.status?.error || "Failed to create vector collection");
+  }
+}
+
+async function upsertVectorPoints(points) {
+  const res = await fetch(
+    `${VECTOR_DB_URL}/collections/${VECTOR_DB_COLLECTION}/points?wait=true`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ points }),
+    },
+  );
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.status?.error || "Failed to upsert vector points");
+  }
+}
+
+async function searchVectorDB(embedding, cloudId, projectKey, topK = 10) {
+  const filter = {
+    must: [
+      { key: "cloudId", match: { value: cloudId } },
+      ...(projectKey
+        ? [{ key: "projectKey", match: { value: projectKey } }]
+        : []),
+    ],
+  };
+  const res = await fetch(
+    `${VECTOR_DB_URL}/collections/${VECTOR_DB_COLLECTION}/points/search`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vector: embedding,
+        filter,
+        limit: topK,
+        with_payload: true,
+        score_threshold: 0.3,
+      }),
+    },
+  );
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.status?.error || "Vector search failed");
+  return Array.isArray(data.result) ? data.result : [];
+}
+
+function vectorResultsToMatches(results) {
+  return results.map((r) => ({
+    issue: {
+      key: r.payload.issueKey,
+      fields: {
+        summary: r.payload.summary || "",
+        status: r.payload.status || null,
+        priority: r.payload.priority || null,
+        assignee: r.payload.assignee || null,
+        labels: r.payload.labels || [],
+      },
+    },
+    score: Math.round(r.score * 100),
+    overlap: 0,
+    source: "vectordb",
+  }));
+}
+
+// ── ANALYSIS RUNNERS ──────────────────────────────────────────────────────────
+async function runJiraAnalysis(
+  cloudId,
+  jiraToken,
+  supportText,
+  ticketTokens,
+  projectKey,
+) {
+  const candidateIssues = await fetchCandidateIssues(
+    cloudId,
+    jiraToken,
+    ticketTokens,
+    projectKey,
+  );
+  const lexicalMatches = candidateIssues
+    .map((issue) => scoreIssueMatch(issue, supportText, ticketTokens))
+    .filter((m) => m.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const rankedMatches = lexicalMatches
+    .slice(0, 5)
+    .map(({ issue, score, overlap }) => ({
+      issue: {
+        key: issue.key,
+        fields: {
+          summary: issue.fields?.summary,
+          status: issue.fields?.status,
+          priority: issue.fields?.priority,
+          assignee: issue.fields?.assignee,
+          labels: issue.fields?.labels,
+        },
+      },
+      score,
+      overlap,
+      source: "jira",
+    }));
+
+  return {
+    rankedMatches,
+    candidateCount: candidateIssues.length,
+    rankingMode: "lexical",
+  };
+}
+
+async function runVectorAnalysis(cloudId, supportText, projectKey) {
+  const embedding = await getEmbedding(supportText);
+  const results = await searchVectorDB(embedding, cloudId, projectKey, 10);
+  const rankedMatches = vectorResultsToMatches(results).slice(0, 5);
+  return {
+    rankedMatches,
+    candidateCount: results.length,
+    rankingMode: "vector",
+  };
+}
+
 // ── JIRA API HELPERS ──────────────────────────────────────────────────────────
 async function getAccessibleResources(jiraToken) {
   const res = await fetch(
@@ -511,9 +707,10 @@ async function fetchCandidateIssues(
 }
 
 // ── POST /api/process ─────────────────────────────────────────────────────────
-// Full pipeline: fetch Jira issues → score → Jira-based suggestions.
-// Receives: Authorization: Bearer <jira_access_token>, body: { supportText }
-// Returns:  { rankedMatches, candidateCount, classification, suggestions, rankingMode, siteUrl }
+// Full pipeline: Jira-based, vector DB-based, or both analyses in parallel.
+// Receives: Authorization: Bearer <jira_access_token>,
+//           body: { supportText, workspaceId?, projectKey?,
+//                   analysisMode?: "jira" | "vectordb" | "both" }
 app.post("/api/process", async (req, res) => {
   if (!requireStrings(req.body, ["supportText"], res)) return;
 
@@ -524,6 +721,7 @@ app.post("/api/process", async (req, res) => {
       .json({ error: "Jira token required in Authorization header" });
 
   const supportText = req.body.supportText.trim().slice(0, 4000);
+  const aiSafeSupportText = redactPII(supportText);
   const ticketTokens = extractTokens(supportText);
   if (!ticketTokens.length) {
     return res
@@ -536,53 +734,94 @@ app.post("/api/process", async (req, res) => {
     return res.status(400).json({ error: "Invalid projectKey format" });
   }
 
+  const analysisMode = ["jira", "vectordb", "both"].includes(
+    req.body.analysisMode,
+  )
+    ? req.body.analysisMode
+    : "jira";
+
   try {
     const { cloudId, siteUrl } = await getWorkspaceContext(
       jiraToken,
       req.body.workspaceId,
     );
-    const candidateIssues = await fetchCandidateIssues(
-      cloudId,
-      jiraToken,
-      ticketTokens,
-      projectKey,
+
+    const [jiraSettled, vectorSettled] = await Promise.allSettled([
+      analysisMode !== "vectordb"
+        ? runJiraAnalysis(
+            cloudId,
+            jiraToken,
+            supportText,
+            ticketTokens,
+            projectKey,
+          )
+        : Promise.resolve(null),
+      analysisMode !== "jira"
+        ? runVectorAnalysis(cloudId, aiSafeSupportText, projectKey)
+        : Promise.resolve(null),
+    ]);
+
+    const jira = jiraSettled.status === "fulfilled" ? jiraSettled.value : null;
+    const vector =
+      vectorSettled.status === "fulfilled" ? vectorSettled.value : null;
+    const vectorError =
+      vectorSettled.status === "rejected" ? vectorSettled.reason.message : null;
+
+    if (analysisMode === "both") {
+      const combinedMatches = [
+        ...(jira?.rankedMatches || []),
+        ...(vector?.rankedMatches || []),
+      ];
+      const classification = classifySupportRequest(
+        supportText,
+        combinedMatches,
+      );
+      const suggestions = deriveSmartSuggestions(combinedMatches);
+      if (suggestions?.assignee?.value) {
+        suggestions.assignee.accountId = resolveAssigneeAccountId(
+          suggestions.assignee.value,
+          combinedMatches,
+        );
+      }
+      return res.json({
+        analysisMode: "both",
+        jiraResult: jira,
+        vectorResult: vector,
+        vectorError,
+        classification,
+        suggestions,
+        siteUrl,
+      });
+    }
+
+    const result = jira || vector;
+    if (!result) {
+      const errMsg =
+        analysisMode === "vectordb"
+          ? vectorSettled.reason?.message || "Vector analysis failed"
+          : jiraSettled.reason?.message || "Jira analysis failed";
+      return res.status(500).json({ error: errMsg });
+    }
+
+    const classification = classifySupportRequest(
+      supportText,
+      result.rankedMatches,
     );
-
-    const lexicalMatches = candidateIssues
-      .map((issue) => scoreIssueMatch(issue, supportText, ticketTokens))
-      .filter((m) => m.score > 0)
-      .sort((a, b) => b.score - a.score);
-
-    let rankingMode = "lexical";
-    const rankedMatches = lexicalMatches.slice(0, 5);
-    const classification = classifySupportRequest(supportText, rankedMatches);
-    const suggestions = deriveSmartSuggestions(rankedMatches);
+    const suggestions = deriveSmartSuggestions(result.rankedMatches);
     if (suggestions?.assignee?.value) {
       suggestions.assignee.accountId = resolveAssigneeAccountId(
         suggestions.assignee.value,
-        rankedMatches,
+        result.rankedMatches,
       );
     }
 
     return res.json({
-      rankedMatches: rankedMatches.map(({ issue, score, overlap }) => ({
-        issue: {
-          key: issue.key,
-          fields: {
-            summary: issue.fields?.summary,
-            status: issue.fields?.status,
-            priority: issue.fields?.priority,
-            assignee: issue.fields?.assignee,
-            labels: issue.fields?.labels,
-          },
-        },
-        score,
-        overlap,
-      })),
-      candidateCount: candidateIssues.length,
+      analysisMode,
+      rankedMatches: result.rankedMatches,
+      candidateCount: result.candidateCount,
       classification,
       suggestions,
-      rankingMode,
+      rankingMode: result.rankingMode,
       siteUrl,
     });
   } catch (err) {
@@ -727,15 +966,114 @@ app.get("/api/jira/projects", async (req, res) => {
   }
 });
 
+// ── POST /api/vectordb/index ──────────────────────────────────────────────────
+// Embeds and upserts Jira issues from the selected workspace into the vector DB.
+app.post("/api/vectordb/index", async (req, res) => {
+  const jiraToken = extractBearerToken(req);
+  if (!jiraToken)
+    return res
+      .status(401)
+      .json({ error: "Jira token required in Authorization header" });
+
+  const projectKey = (req.body.projectKey || "").trim();
+  if (projectKey && !/^[A-Za-z][A-Za-z0-9]{0,49}$/.test(projectKey)) {
+    return res.status(400).json({ error: "Invalid projectKey format" });
+  }
+
+  try {
+    const { cloudId } = await getWorkspaceContext(
+      jiraToken,
+      req.body.workspaceId,
+    );
+
+    const broadTokens = ["issue", "support", "request", "error", "bug", "task"];
+    const issues = await fetchCandidateIssues(
+      cloudId,
+      jiraToken,
+      broadTokens,
+      projectKey,
+    );
+
+    if (!issues.length) return res.json({ indexed: 0 });
+
+    const firstIssueAiSafeText = redactPII(buildIssueAnalysisText(issues[0]));
+    const firstEmbedding = await getEmbedding(firstIssueAiSafeText);
+    await ensureVectorCollection(firstEmbedding.length);
+
+    const BATCH_SIZE = 20;
+    let indexed = 0;
+
+    for (let i = 0; i < issues.length; i += BATCH_SIZE) {
+      const batch = issues.slice(i, i + BATCH_SIZE);
+      const points = [];
+      for (let j = 0; j < batch.length; j++) {
+        const issue = batch[j];
+        const aiSafeIssueText = redactPII(buildIssueAnalysisText(issue));
+        const embedding =
+          i === 0 && j === 0
+            ? firstEmbedding
+            : await getEmbedding(aiSafeIssueText);
+        points.push({
+          id: hashIssueKey(`${cloudId}:${issue.key}`),
+          vector: embedding,
+          payload: {
+            cloudId,
+            issueKey: issue.key,
+            projectKey: issue.key.split("-")[0],
+            summary: issue.fields?.summary || "",
+            status: issue.fields?.status || null,
+            priority: issue.fields?.priority || null,
+            assignee: issue.fields?.assignee || null,
+            labels: issue.fields?.labels || [],
+          },
+        });
+      }
+      await upsertVectorPoints(points);
+      indexed += points.length;
+    }
+
+    return res.json({ indexed });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── HEALTH CHECK ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
 app.get("/api/status", async (_req, res) => {
+  let vectorDb = { connected: false, detail: "Not reachable" };
+  const controller = new AbortController();
+  const tId = setTimeout(() => controller.abort(), 3000);
+  try {
+    const vRes = await fetch(
+      `${VECTOR_DB_URL}/collections/${VECTOR_DB_COLLECTION}`,
+      { signal: controller.signal },
+    );
+    if (vRes.ok) {
+      const d = await vRes.json().catch(() => ({}));
+      const count = d.result?.points_count ?? "?";
+      vectorDb = {
+        connected: true,
+        detail: `Ready · ${count} vectors indexed`,
+      };
+    } else if (vRes.status === 404) {
+      vectorDb = {
+        connected: true,
+        detail: "Running · collection not yet indexed",
+      };
+    } else {
+      vectorDb = { connected: false, detail: `HTTP ${vRes.status}` };
+    }
+  } catch {
+    vectorDb = { connected: false, detail: "Cannot reach vector DB" };
+  } finally {
+    clearTimeout(tId);
+  }
+
   return res.json({
-    backend: {
-      connected: true,
-      detail: "Backend reachable",
-    },
+    backend: { connected: true, detail: "Backend reachable" },
+    vectorDb,
   });
 });
 

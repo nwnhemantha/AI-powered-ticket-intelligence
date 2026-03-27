@@ -2,19 +2,37 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>Ticket Intelligence</title>
+    <title>AI Ticket Intelligence</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="container">
       <div class="header-row">
-        <h2>Jira ticket intelligence</h2>
-        <button id="logoutBtn" class="logout-ghost hidden">Logout</button>
+        <h2>AI-powered Jira ticket intelligence</h2>
+        <div class="header-actions">
+          <label class="theme-toggle" for="themeToggle" title="Toggle theme">
+            <input
+              id="themeToggle"
+              type="checkbox"
+              aria-label="Enable light theme"
+            />
+            <span class="theme-toggle-track" aria-hidden="true">
+              <span class="theme-toggle-thumb"></span>
+            </span>
+            <span
+              id="themeToggleIcon"
+              class="theme-toggle-label"
+              aria-hidden="true"
+              >🌙</span
+            >
+          </label>
+          <button id="logoutBtn" class="logout-ghost hidden">Logout</button>
+        </div>
       </div>
 
       <nav class="tabs" aria-label="Popup sections">
         <button id="tabAnalyzeBtn" class="tab-btn tab-btn-active" type="button">
-          Analyzer
+          AI Analyzer
         </button>
         <button id="tabLogsBtn" class="tab-btn" type="button">Logs</button>
       </nav>
@@ -33,6 +51,19 @@
             </div>
             <div class="service-detail">Verifying backend connectivity...</div>
           </article>
+          <article
+            id="vectorDbStatus"
+            class="service-status-card status-checking"
+          >
+            <div class="service-status-header">
+              <span class="service-dot" aria-hidden="true"></span>
+              <span class="service-name">Vector DB</span>
+              <span class="service-pill">Checking</span>
+            </div>
+            <div class="service-detail">
+              Verifying vector DB connectivity...
+            </div>
+          </article>
         </section>
 
         <button id="loginBtn" class="primary">Connect to Jira</button>
@@ -41,6 +72,49 @@
         <div id="loading" class="meta hidden">Loading...</div>
 
         <div id="supportTool" class="support-tool hidden">
+          <div class="analysis-source-card">
+            <span class="analysis-source-label">Analysis source</span>
+            <div class="mode-group" role="group" aria-label="Analysis mode">
+              <button
+                id="modeJiraBtn"
+                class="mode-btn mode-btn-active"
+                type="button"
+                data-mode="jira"
+              >
+                <span class="mode-btn-name">Jira</span>
+                <span class="mode-btn-desc">Keyword</span>
+              </button>
+              <button
+                id="modeVectorBtn"
+                class="mode-btn"
+                type="button"
+                data-mode="vectordb"
+              >
+                <span class="mode-btn-name">Semantic</span>
+                <span class="mode-btn-desc">Vector</span>
+              </button>
+              <button
+                id="modeBothBtn"
+                class="mode-btn"
+                type="button"
+                data-mode="both"
+              >
+                <span class="mode-btn-name">Both</span>
+                <span class="mode-btn-desc">Hybrid</span>
+              </button>
+            </div>
+            <div id="syncRow" class="sync-row hidden">
+              <span class="sync-hint"
+                >Sync all projects in selected workspace.</span
+              >
+              <button id="syncVectorBtn" class="sync-btn" type="button">
+                Sync
+              </button>
+            </div>
+            <div class="privacy-note">
+              PII is redacted before AI processing.
+            </div>
+          </div>
           <label class="support-label" for="workspaceSelect">Workspace</label>
           <select id="workspaceSelect" class="text-input">
             <option value="">Loading workspaces...</option>
@@ -58,22 +132,22 @@
                 <div class="ai-ring ai-ring-2"></div>
                 <span class="ai-core">JIRA</span>
               </div>
-              <p class="ai-overlay-title">Analyzing tickets</p>
+              <p class="ai-overlay-title">Running AI analysis</p>
               <ul class="ai-steps" id="aiStepList">
                 <li class="ai-step" data-step="0">
                   <span class="ai-step-dot"></span>Reading support request
                 </li>
                 <li class="ai-step" data-step="1">
-                  <span class="ai-step-dot"></span>Searching Jira tickets
+                  <span class="ai-step-dot"></span>Searching Jira and AI context
                 </li>
                 <li class="ai-step" data-step="2">
-                  <span class="ai-step-dot"></span>Classifying request
+                  <span class="ai-step-dot"></span>Running AI classification
                 </li>
                 <li class="ai-step" data-step="3">
-                  <span class="ai-step-dot"></span>Preparing suggestions
+                  <span class="ai-step-dot"></span>Preparing AI suggestions
                 </li>
                 <li class="ai-step" data-step="4">
-                  <span class="ai-step-dot"></span>Finalizing results
+                  <span class="ai-step-dot"></span>Finalizing AI results
                 </li>
               </ul>
             </div>
@@ -91,14 +165,14 @@
             <textarea
               id="supportTicketInput"
               rows="10"
-              placeholder="Insert support request text here..."
+              placeholder="Insert support request text..."
             ></textarea>
             <button id="validateTicketBtn" class="validate-btn">
-              Run Analysis
+              Run AI Analysis
             </button>
           </div>
           <section id="ticketClassification" class="classification-card hidden">
-            <h3>Automatic classification</h3>
+            <h3>AI classification</h3>
             <div id="classificationIntent" class="suggestion-item"></div>
             <div id="classificationCategory" class="suggestion-item"></div>
             <div id="classificationSentiment" class="suggestion-item"></div>
@@ -114,7 +188,7 @@
           <div id="validationMeta" class="meta hidden"></div>
           <div id="validationResults" class="validation-results hidden"></div>
           <section id="smartSuggestions" class="smart-suggestions hidden">
-            <h3>Smart suggestions</h3>
+            <h3>AI suggestions</h3>
             <div id="suggestionsMeta" class="meta"></div>
             <div id="suggestedPriority" class="suggestion-item"></div>
             <div id="suggestedLabels" class="suggestion-item"></div>
@@ -186,7 +260,7 @@
           <div id="successBanner" class="success-banner hidden"></div>
         </div>
 
-        <div id="error" class="error"></div>
+        <div id="error" class="notification hidden"></div>
       </section>
 
       <section id="logsTab" class="tab-panel hidden" aria-label="Runtime logs">

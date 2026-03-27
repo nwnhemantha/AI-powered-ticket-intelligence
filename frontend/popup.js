@@ -1330,9 +1330,56 @@ function renderClassification(classification) {
   document.getElementById("ticketClassification").classList.remove("hidden");
 }
 
+function sanitizeSuggestedLabels(values) {
+  const blockedExact = new Set([
+    "software",
+    "jira",
+    "task",
+    "ticket",
+    "issue",
+    "general",
+    "support",
+    "default",
+    "misc",
+    "other",
+    "na",
+    "n-a",
+    "service-desk",
+  ]);
+  const blockedRoots = [
+    "software",
+    "support",
+    "task",
+    "ticket",
+    "issue",
+    "general",
+    "misc",
+    "other",
+    "service_desk",
+    "service-desk",
+    "servicedesk",
+  ];
+
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((v) => normalizeText(v).replace(/\s+/g, "-"))
+        .filter((v) => v && !blockedExact.has(v))
+        .filter((v) => !blockedRoots.some((root) => v.includes(root))),
+    ),
+  ).slice(0, 6);
+}
+
 function renderSmartSuggestions(suggestions) {
   document.getElementById("suggestionsMeta").innerText =
     "Source: AI (Jira + Vector DB).";
+
+  const sanitizedLabelValues = sanitizeSuggestedLabels(
+    suggestions?.labels?.values,
+  );
+  if (suggestions?.labels) {
+    suggestions.labels.values = sanitizedLabelValues;
+  }
 
   document.getElementById("suggestedPriority").innerHTML =
     `<div class="suggestion-row">` +
@@ -1343,8 +1390,8 @@ function renderSmartSuggestions(suggestions) {
     `<button type="button" class="apply-suggestion-btn" data-apply-target="priority">Apply</button>` +
     `</div>`;
 
-  const labelsMarkup = suggestions.labels.values.length
-    ? suggestions.labels.values
+  const labelsMarkup = sanitizedLabelValues.length
+    ? sanitizedLabelValues
         .map((l) => `<span class="chip">${escapeHtml(l)}</span>`)
         .join("")
     : `<span class="chip">needs-triage</span>`;

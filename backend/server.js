@@ -284,6 +284,42 @@ function suggestPriority(matches) {
 }
 
 function suggestLabels(matches) {
+  const GENERIC_LABELS = new Set([
+    "software",
+    "jira",
+    "task",
+    "ticket",
+    "issue",
+    "general",
+    "support",
+    "default",
+    "misc",
+    "other",
+    "na",
+    "n-a",
+    "service-desk",
+  ]);
+  const GENERIC_LABEL_ROOTS = [
+    "software",
+    "support",
+    "task",
+    "ticket",
+    "issue",
+    "general",
+    "misc",
+    "other",
+  ];
+
+  const isMeaningfulLabel = (label) => {
+    if (!label) return false;
+    if (GENERIC_LABELS.has(label)) return false;
+    if (GENERIC_LABEL_ROOTS.some((root) => label.includes(root))) return false;
+    if (label.length < 3) return false;
+    if (/^\d+$/.test(label)) return false;
+    if (/^[a-z]+\d{4,}$/i.test(label)) return false;
+    return true;
+  };
+
   const weights = new Map();
   for (const m of matches) {
     const labels = Array.isArray(m.issue.fields?.labels)
@@ -291,19 +327,22 @@ function suggestLabels(matches) {
       : [];
     for (const label of labels) {
       const key = normalizeText(label).replace(/\s+/g, "-");
-      if (!key) continue;
+      if (!isMeaningfulLabel(key)) continue;
       weights.set(key, (weights.get(key) || 0) + Math.max(0.2, m.score / 100));
     }
   }
+
   const top = Array.from(weights.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6)
     .map(([l]) => l);
+
+  const values = [...new Set(top)].slice(0, 6);
   return {
-    values: [...new Set(top)].slice(0, 6),
-    reason: top.length
-      ? "Based on labels used in current similar Jira tasks."
-      : "No labels found in current similar Jira tasks.",
+    values,
+    reason: values.length
+      ? "Based on meaningful labels from current similar Jira tasks."
+      : "No useful labels found in current similar Jira tasks.",
   };
 }
 

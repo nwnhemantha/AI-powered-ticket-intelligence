@@ -8,6 +8,7 @@
   "host_permissions": [
     "https://api.atlassian.com/*",
     "https://auth.atlassian.com/*",
+    "https://id.atlassian.com/*",
     "http://127.0.0.1:3000/*"
   ],
   "icons": {

@@ -25,6 +25,9 @@ document.addEventListener("DOMContentLoaded", init);
 document.getElementById("loginBtn").addEventListener("click", login);
 document.getElementById("logoutBtn").addEventListener("click", logout);
 document
+  .getElementById("workspaceSelect")
+  .addEventListener("change", handleWorkspaceChange);
+document
   .getElementById("analyzeProjectSelect")
   .addEventListener("change", handleAnalyzeProjectChange);
 document
@@ -61,6 +64,7 @@ document
 async function init() {
   setupConsoleLogMirroring();
   bindGlobalErrorLogging();
+  // renderOauthDebug();
   appendUiLog("info", "Popup initialized");
   const { token } = await chrome.storage.local.get("token");
   setConnectedState(!!token);
@@ -70,6 +74,7 @@ async function init() {
     await loadWorkspaces();
   } else {
     availableWorkspaces = [];
+    renderWorkspaceState([], "Connect to Jira to load workspaces.");
   }
   await refreshConnectionStatus();
   setInterval(refreshConnectionStatus, 15000);
@@ -166,6 +171,19 @@ async function refreshConnectionStatus() {
   }
 }
 
+function renderOauthDebug() {
+  const debugEl = document.getElementById("oauthDebug");
+  if (!debugEl) return;
+
+  const extensionId = chrome.runtime?.id || "unknown";
+  const redirectUri = chrome.identity.getRedirectURL();
+  debugEl.innerText =
+    `OAuth debug\n` +
+    `Client ID: ${CLIENT_ID}\n` +
+    `Extension ID: ${extensionId}\n` +
+    `Redirect URI: ${redirectUri}`;
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = 90000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -239,12 +257,11 @@ async function login() {
       `&code_challenge=${challenge}` +
       `&code_challenge_method=S256`;
 
-    let redirectUrl;
-    try {
-      redirectUrl = await runWebAuthFlow(`${baseAuthUrl}&prompt=none`, false);
-    } catch {
-      redirectUrl = await runWebAuthFlow(baseAuthUrl, true);
-    }
+    // Some browser profiles block/limit silent web auth; use explicit interactive consent.
+    const redirectUrl = await runWebAuthFlow(
+      `${baseAuthUrl}&prompt=consent`,
+      true,
+    );
 
     if (!redirectUrl) {
       showError("Login failed");
@@ -327,6 +344,7 @@ async function loadWorkspaces() {
 
   if (!token) {
     availableWorkspaces = [];
+    renderWorkspaceState([], "Connect to Jira to load workspaces.");
     return;
   }
 
@@ -352,9 +370,8 @@ async function loadWorkspaces() {
       ? selectedWorkspaceId
       : availableWorkspaces[0]?.id || "";
 
-    if (selectedId) {
-      await chrome.storage.local.set({ selectedWorkspaceId: selectedId });
-    }
+    await chrome.storage.local.set({ selectedWorkspaceId: selectedId });
+    renderWorkspaceState(availableWorkspaces, "", selectedId);
 
     await loadProjectsForWorkspace(selectedId);
     appendUiLog(
@@ -363,8 +380,49 @@ async function loadWorkspaces() {
     );
   } catch (err) {
     availableWorkspaces = [];
+    renderWorkspaceState([], err.message || "Failed to load workspaces.");
     showError(err.message || "Failed to load workspaces.");
   }
+}
+
+function renderWorkspaceState(workspaces, message = "", selectedId = "") {
+  const select = document.getElementById("workspaceSelect");
+
+  if (!workspaces.length) {
+    select.innerHTML = `<option value="">No workspaces available</option>`;
+    select.disabled = true;
+    if (message) {
+      appendUiLog("warn", message);
+    }
+    return;
+  }
+
+  const options = workspaces
+    .map(
+      (workspace) =>
+        `<option value="${escapeHtml(workspace.id)}">${escapeHtml(workspace.name || workspace.url)}</option>`,
+    )
+    .join("");
+  select.innerHTML = options;
+  select.disabled = false;
+  select.value =
+    workspaces.some((workspace) => workspace.id === selectedId) && selectedId
+      ? selectedId
+      : workspaces[0].id;
+}
+
+async function handleWorkspaceChange(event) {
+  const workspaceId = String(event.target.value || "");
+  if (!availableWorkspaces.some((workspace) => workspace.id === workspaceId)) {
+    return;
+  }
+
+  await chrome.storage.local.set({
+    selectedWorkspaceId: workspaceId,
+    selectedProjectKey: "",
+  });
+  appendUiLog("info", "Workspace changed. Reloading projects...");
+  await loadProjectsForWorkspace(workspaceId);
 }
 
 async function loadProjectsForWorkspace(workspaceId) {
@@ -691,7 +749,10 @@ function setConnectedState(isConnected) {
   document.getElementById("statusText").innerText = isConnected
     ? "Connected to Jira"
     : "Connect your Jira account to classify, prioritize, and respond to support requests";
-  if (!isConnected) hideValidationResults();
+  if (!isConnected) {
+    renderWorkspaceState([], "Connect to Jira to load workspaces.");
+    hideValidationResults();
+  }
 }
 
 function setLoading(isLoading) {

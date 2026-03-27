@@ -36,10 +36,16 @@
         </section>
 
         <button id="loginBtn" class="primary">Connect to Jira</button>
+        <!-- <div id="oauthDebug" class="oauth-debug"></div> -->
 
         <div id="loading" class="meta hidden">Loading...</div>
 
         <div id="supportTool" class="support-tool hidden">
+          <label class="support-label" for="workspaceSelect">Workspace</label>
+          <select id="workspaceSelect" class="text-input">
+            <option value="">Loading workspaces...</option>
+          </select>
+
           <div
             id="aiOverlay"
             class="ai-overlay hidden"

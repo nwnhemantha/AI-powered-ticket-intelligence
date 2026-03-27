@@ -1011,9 +1011,67 @@ function setLoading(isLoading) {
 
 const AI_STEP_DELAYS = [0, 1100, 3000, 5200, 7800];
 
+function getOverlayCopyForMode(mode) {
+  if (mode === "vectordb") {
+    return {
+      title: "Running semantic AI analysis",
+      steps: [
+        "Reading support request",
+        "Preparing semantic vector query",
+        "Searching vector knowledge base",
+        "Generating AI-driven suggestions",
+        "Finalizing analysis results",
+      ],
+    };
+  }
+
+  if (mode === "both") {
+    return {
+      title: "Running hybrid analysis",
+      steps: [
+        "Reading support request",
+        "Running Jira keyword analysis",
+        "Running semantic vector analysis",
+        "Combining insights and suggestions",
+        "Finalizing hybrid results",
+      ],
+    };
+  }
+
+  return {
+    title: "Running Jira analysis",
+    steps: [
+      "Reading support request",
+      "Searching Jira issues by relevance",
+      "Scoring keyword similarity",
+      "Deriving classification and suggestions",
+      "Finalizing Jira results",
+    ],
+  };
+}
+
+function renderOverlayStepsForMode(mode) {
+  const overlay = document.getElementById("aiOverlay");
+  const titleEl = overlay?.querySelector(".ai-overlay-title");
+  const stepList = document.getElementById("aiStepList");
+  if (!stepList) return;
+
+  const copy = getOverlayCopyForMode(mode);
+  if (titleEl) titleEl.innerText = copy.title;
+
+  stepList.innerHTML = copy.steps
+    .map(
+      (text, index) =>
+        `<li class="ai-step" data-step="${index}"><span class="ai-step-dot"></span>${escapeHtml(text)}</li>`,
+    )
+    .join("");
+}
+
 function showAiOverlay() {
   _pendingHide = false;
   _stepsAllComplete = false;
+
+  renderOverlayStepsForMode(analysisMode);
 
   const overlay = document.getElementById("aiOverlay");
   const steps = overlay?.querySelectorAll(".ai-step") || [];

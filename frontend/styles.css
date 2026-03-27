@@ -543,6 +543,23 @@ select {
   color: #006644;
 }
 
+.status-connected .service-name {
+  color: #0f5132;
+}
+
+.status-connected .service-detail,
+.status-connected .service-meta {
+  color: #166534;
+}
+
+.status-connected .service-link {
+  color: #166534;
+}
+
+.status-connected .service-link:hover {
+  color: #14532d;
+}
+
 .status-disconnected {
   border-color: #ff8f73;
   background: linear-gradient(135deg, #fff7f5 0%, #ffebe6 100%);
@@ -555,6 +572,23 @@ select {
 .status-disconnected .service-pill {
   background: #ffd5cc;
   color: #bf2600;
+}
+
+.status-disconnected .service-name {
+  color: #9f1239;
+}
+
+.status-disconnected .service-detail,
+.status-disconnected .service-meta {
+  color: #be123c;
+}
+
+.status-disconnected .service-link {
+  color: #be123c;
+}
+
+.status-disconnected .service-link:hover {
+  color: #9f1239;
 }
 
 .status-checking {
@@ -570,6 +604,23 @@ select {
 .status-checking .service-pill {
   background: #deebff;
   color: #0747a6;
+}
+
+.status-checking .service-name {
+  color: #1e3a8a;
+}
+
+.status-checking .service-detail,
+.status-checking .service-meta {
+  color: #1d4ed8;
+}
+
+.status-checking .service-link {
+  color: #1d4ed8;
+}
+
+.status-checking .service-link:hover {
+  color: #1e40af;
 }
 
 @keyframes statusPulse {
@@ -857,6 +908,16 @@ select {
   color: #93a4b8;
 }
 
+#validationMeta {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #35507a;
+  background: rgba(29, 78, 216, 0.12);
+  color: #bfdbfe;
+  font-weight: 600;
+}
+
 .badge {
   background: #dfe1e6;
   padding: 4px 8px;
@@ -988,6 +1049,12 @@ body[data-theme="light"] .issue-key {
 
 body[data-theme="light"] .meta {
   color: #475569;
+}
+
+body[data-theme="light"] #validationMeta {
+  border-color: #bfd2f2;
+  background: #edf4ff;
+  color: #1e3a8a;
 }
 
 body[data-theme="light"] .chip {

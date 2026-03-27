@@ -3,7 +3,6 @@
   "name": "Jira ticket intelligence",
   "version": "1.0",
   "description": "Jira ticket intelligence system that classifies and prioritizes support requests using Jira context.",
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqxYesAgsuU0fzIfRzK3UCpZqCxXa3MCZRH/FiDh91tQJe1PTvpf6nuaQOLLlAG7IPMo1jvZmefF6QS3hriYFb23++szgbKJFBbO8I+t88AoTSSnROo2N7UqWJdfiWQ5w5rp+p8Fv6yZC3dqht4d3Dq9nuutUxqxzbus2e2NVUBA2Q/10sy6QIuhLw5a5AIRA6DpJW8fa6/I3oL5e4aWVW7G7HJEag0Md0zaDEYxzYDGKkp94rYaDjCmgfyKHTjKhzMGYwNpm7B528++W0nLsBAKCUutvofckkFUjAK2+uAcrW+Lm0z/09w2s7PpKi4XbXnn4fD767ukx1bR7wxtIvQIDAQAB",
   "permissions": ["identity", "storage"],
   "host_permissions": [
     "https://api.atlassian.com/*",

@@ -1118,6 +1118,6 @@ app.get("/api/status", async (_req, res) => {
 
 // ── START ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`Backend running on http://127.0.0.1:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Backend running on http://0.0.0.0:${PORT}`);
 });

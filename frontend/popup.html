@@ -27,7 +27,7 @@
             >
           </label>
           <button id="logoutBtn" class="logout-ghost hidden">
-            <img src="icons/logout.png" class="logout-img"/>
+            <img src="icons/logout.png" class="logout-img" />
           </button>
         </div>
       </div>
@@ -36,13 +36,18 @@
         <button id="tabAnalyzeBtn" class="tab-btn tab-btn-active" type="button">
           AI Analyzer
         </button>
-        <button id="tabLogsBtn" class="tab-btn tab-logs" type="button">Logs</button>
+        <button id="tabLogsBtn" class="tab-btn tab-logs" type="button">
+          Logs
+        </button>
       </nav>
 
       <section id="analyzeTab" class="tab-panel">
         <!-- <div id="statusText" class="meta"></div> -->
         <section class="service-status-board" aria-label="Connection status">
-          <article id="jiraStatus" class="service-status-card status-disconnected">
+          <article
+            id="jiraStatus"
+            class="service-status-card status-disconnected"
+          >
             <div class="service-status-header">
               <span class="service-dot"></span>
               <span class="service-name">Jira</span>
@@ -121,9 +126,11 @@
                 Sync
               </button>
             </div>
-            <div class="privacy-note">
-              PII is redacted before AI processing.
-            </div>
+          </div>
+          <div class="privacy-note privacy-note-outside">
+            <span class="privacy-note-title">Important:</span>
+            Personally identifiable information (PII) is redacted before AI
+            processing.
           </div>
           <div class="field-wrapper">
             <label class="support-label" for="workspaceSelect">Workspace</label>
@@ -250,13 +257,13 @@
             </div>
 
             <div class="field-wrapper">
-            <label class="support-label" for="draftAssignee">Assignee</label>
-            <input
-              id="draftAssignee"
-              class="text-input"
-              type="text"
-              placeholder="e.g. user@example.com"
-            />
+              <label class="support-label" for="draftAssignee">Assignee</label>
+              <input
+                id="draftAssignee"
+                class="text-input"
+                type="text"
+                placeholder="e.g. user@example.com"
+              />
             </div>
 
             <div class="field-wrapper">

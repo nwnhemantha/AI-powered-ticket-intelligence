@@ -15,6 +15,9 @@
   --line-2: #334155;
   --brand-1: #3b82f6;
   --brand-2: #1d4ed8;
+  --scroll-track: rgba(30, 58, 138, 0.3);
+  --scroll-thumb: rgba(59, 130, 246, 0.78);
+  --scroll-thumb-hover: rgba(96, 165, 250, 0.95);
 }
 
 body[data-theme="light"] {
@@ -34,14 +37,17 @@ body[data-theme="light"] {
   --line-2: #b9c8de;
   --brand-1: #2563eb;
   --brand-2: #1d4ed8;
+  --scroll-track: rgba(219, 234, 254, 0.92);
+  --scroll-thumb: rgba(37, 99, 235, 0.62);
+  --scroll-thumb-hover: rgba(29, 78, 216, 0.82);
 }
 
-html,
-body {
-  overflow: hidden;
+html {
+  direction: rtl;
 }
 
 body {
+  direction: ltr;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
   background: radial-gradient(
     circle at 20% 0%,
@@ -54,12 +60,56 @@ body {
   color: var(--text-1);
 }
 
+html,
+body,
+.logs-output,
+.validation-results,
+.issue-list {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.logs-output::-webkit-scrollbar,
+.validation-results::-webkit-scrollbar,
+.issue-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+.logs-output::-webkit-scrollbar-track,
+.validation-results::-webkit-scrollbar-track,
+.issue-list::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+  border-radius: 999px;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+.logs-output::-webkit-scrollbar-thumb,
+.validation-results::-webkit-scrollbar-thumb,
+.issue-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+.logs-output::-webkit-scrollbar-thumb:hover,
+.validation-results::-webkit-scrollbar-thumb:hover,
+.issue-list::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: padding-box;
+}
+
 .container {
   padding: 15px;
   background: var(--container-bg);
-  max-height: 100vh;
-  overflow-y: auto;
-  overflow-x: hidden;
 }
 
 .header-row {
@@ -1007,22 +1057,6 @@ select {
   gap: 10px;
   max-height: 420px;
   overflow-y: auto;
-}
-
-.container,
-.logs-output,
-.validation-results,
-.issue-list {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.container::-webkit-scrollbar,
-.logs-output::-webkit-scrollbar,
-.validation-results::-webkit-scrollbar,
-.issue-list::-webkit-scrollbar {
-  width: 0;
-  height: 0;
 }
 
 .hidden {

@@ -45,7 +45,7 @@ body {
     var(--page-grad-end) 100%
   );
   margin: 0;
-  width: 420px;
+  width: 560px;
   color: var(--text-1);
 }
 
@@ -129,7 +129,7 @@ h2 {
 .tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 1px;
 }
 
 .tab-btn {
@@ -157,12 +157,13 @@ h2 {
   border-color: var(--brand-1);
 }
 
-.tab-logs{
+.tab-logs {
   flex: 0 0 30px;
 }
 
 .tab-panel {
   min-height: 120px;
+  margin-top: 10px;
 }
 
 .tab-panel:not(.hidden) {
@@ -219,7 +220,7 @@ h2 {
   line-height: 0;
 }
 
-.logout-img{
+.logout-img {
   width: 20px;
 }
 
@@ -430,7 +431,7 @@ button:hover {
   margin-bottom: 2px;
 }
 
-.field-wrapper{
+.field-wrapper {
   margin-bottom: 6px;
 }
 
@@ -473,6 +474,8 @@ select {
   display: grid;
   grid-template-columns: repeat(3, 1fr); /* 3 equal columns */
   gap: 8px;
+  margin-bottom: 15px;
+  margin-top: 10px;
 }
 
 .service-status-card {
@@ -635,7 +638,7 @@ select {
   color: #1e40af;
 }
 
-.text-status-checking{
+.text-status-checking {
   color: #0052cc;
 }
 
@@ -695,7 +698,8 @@ select {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 220px;
+  min-height: 180px;
+  max-height: 420px;
   overflow-y: auto;
 }
 
@@ -846,7 +850,7 @@ select {
 .match-score {
   font-size: 12px;
   font-weight: 700;
-  color: #006644;
+  color: #4ade80;
   margin-left: auto;
 }
 
@@ -913,6 +917,7 @@ select {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   font-weight: bold;
 }
 
@@ -1069,6 +1074,10 @@ body[data-theme="light"] .match-card {
 
 body[data-theme="light"] .issue-key {
   color: #1d4ed8;
+}
+
+body[data-theme="light"] .match-score {
+  color: #15803d;
 }
 
 body[data-theme="light"] .meta {

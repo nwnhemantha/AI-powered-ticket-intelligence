@@ -3,7 +3,8 @@
 // This file handles Chrome extension APIs, DOM rendering, and user interactions.
 
 const CLIENT_ID = "w9INPC3ijaNnuUTkrcuQL8p0AQy3js22";
-const BACKEND_BASE_URL = "http://127.0.0.1:3000";
+// const BACKEND_BASE_URL = "http://127.0.0.1:3000";
+const BACKEND_BASE_URL = "http://ec2-52-22-101-69.compute-1.amazonaws.com:3000";
 
 let latestSuggestions = null;
 let latestClassification = null;
@@ -334,6 +335,9 @@ function base64UrlEncode(buffer) {
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────────
 async function login() {
+  const loginBtn = document.getElementById("loginBtn");
+  loginBtn.disabled = true;
+  loginBtn.textContent = "Connecting…";
   try {
     _sessionExpiredHandled = false;
     appendUiLog("info", "Login flow started");
@@ -389,6 +393,9 @@ async function login() {
     appendUiLog("info", "Login flow completed");
   } catch (err) {
     showError(err.message);
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.textContent = "Connect to Jira";
   }
 }
 
@@ -993,13 +1000,13 @@ function setConnectedState(isConnected) {
   document
     .getElementById("supportTool")
     .classList.toggle("hidden", !isConnected);
- const jiraStatusEl = document.getElementById("jiraStatus");
+  const jiraStatusEl = document.getElementById("jiraStatus");
   if (jiraStatusEl) {
     setServiceStatus(
       jiraStatusEl,
       "Jira",
       isConnected ? "connected" : "disconnected",
-      isConnected ? "Authenticated successfully" : "Not connected"
+      isConnected ? "Authenticated successfully" : "Not connected",
     );
   }
   if (!isConnected) {
@@ -1398,8 +1405,8 @@ function renderSmartSuggestions(suggestions) {
 
   const labelsMarkup = sanitizedLabelValues.length
     ? sanitizedLabelValues
-      .map((l) => `<span class="chip">${escapeHtml(l)}</span>`)
-      .join("")
+        .map((l) => `<span class="chip">${escapeHtml(l)}</span>`)
+        .join("")
     : `<span class="chip">needs-triage</span>`;
 
   document.getElementById("suggestedLabels").innerHTML =
@@ -1571,15 +1578,15 @@ function toAdfDocument(text) {
     type: "doc",
     content: lines.length
       ? lines.map((line) => ({
-        type: "paragraph",
-        content: [{ type: "text", text: line }],
-      }))
-      : [
-        {
           type: "paragraph",
-          content: [{ type: "text", text: "No description provided." }],
-        },
-      ],
+          content: [{ type: "text", text: line }],
+        }))
+      : [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "No description provided." }],
+          },
+        ],
   };
 }
 

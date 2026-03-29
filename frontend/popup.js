@@ -280,7 +280,8 @@ function isLikelyAuthFailure(status, message = "") {
     m.includes("unauthorized") ||
     m.includes("forbidden") ||
     m.includes("invalid token") ||
-    m.includes("authorization")
+    m.includes("authorization") ||
+    m.includes("no jira sites")
   );
 }
 

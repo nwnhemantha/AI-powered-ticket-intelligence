@@ -524,6 +524,11 @@ button:hover {
   line-height: 1.45;
 }
 
+#syncScopeHint {
+  color: var(--text-2);
+  font-weight: 700;
+}
+
 .sync-btn {
   white-space: nowrap;
   min-width: 68px;

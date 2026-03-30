@@ -97,6 +97,7 @@ async function init() {
     ]);
   applyTheme(savedTheme || "dark");
   setAnalysisMode(savedAnalysisMode || "jira");
+  updateSyncScopeHint("");
   setConnectedState(!!token);
   setBackendAvailability(false);
   updateExportButtonState(false, false);
@@ -566,6 +567,16 @@ async function handleModeButtonClick(event) {
   appendUiLog("info", `AI analysis mode set to: ${analysisMode}`);
 }
 
+function getSyncScopeLabelFromProjectKey(projectKey = "") {
+  return projectKey ? `Project ${projectKey}` : "All projects in selected workspace";
+}
+
+function updateSyncScopeHint(projectKey = "", customLabel = "") {
+  const hintEl = document.getElementById("syncScopeHint");
+  if (!hintEl) return;
+  hintEl.innerText = customLabel || getSyncScopeLabelFromProjectKey(projectKey);
+}
+
 // ── VECTOR DB SYNC ────────────────────────────────────────────────────────────
 async function syncVectorDB() {
   const { token } = await chrome.storage.local.get("token");
@@ -581,11 +592,14 @@ async function syncVectorDB() {
   }
 
   const btn = document.getElementById("syncVectorBtn");
+  const selectedProjectKey =
+    document.getElementById("analyzeProjectSelect")?.value || "";
+  const syncScopeLabel = getSyncScopeLabelFromProjectKey(selectedProjectKey);
   const originalLabel = btn.innerText;
   btn.disabled = true;
   btn.innerText = "Syncing...";
   clearError();
-  appendUiLog("info", "Vector DB sync started...");
+  appendUiLog("info", `Vector DB sync started for ${syncScopeLabel}...`);
 
   try {
     const res = await fetchWithTimeout(
@@ -598,8 +612,8 @@ async function syncVectorDB() {
         },
         body: JSON.stringify({
           workspaceId: selectedWorkspaceId,
-          // Sync all projects in the selected workspace/site.
-          projectKey: "",
+          // If projectKey is empty, backend syncs all projects in workspace.
+          projectKey: selectedProjectKey,
         }),
       },
       300000,
@@ -616,9 +630,11 @@ async function syncVectorDB() {
 
     appendUiLog(
       "info",
-      `Vector DB sync complete: ${data.indexed} issues indexed`,
+      `Vector DB sync complete for ${syncScopeLabel}: ${data.indexed} issues indexed`,
     );
-    showSuccess(`Sync complete: ${data.indexed} issues indexed.`);
+    showSuccess(
+      `Sync complete for ${syncScopeLabel}: ${data.indexed} issues indexed.`,
+    );
     await refreshConnectionStatus();
   } catch (err) {
     showError(err.message || "Vector DB sync failed.");
@@ -693,6 +709,7 @@ function renderProjectLoading() {
   analyzeSelect.innerHTML = `<option value="">Loading projects...</option>`;
   select.disabled = true;
   analyzeSelect.disabled = true;
+  updateSyncScopeHint("", "Loading available projects");
   meta.innerText = "Fetching Jira projects for the selected workspace...";
   document.getElementById("ticketInputSection").classList.add("hidden");
 }
@@ -707,6 +724,7 @@ function renderProjectState(projects, message = "", selectedKey = "") {
     analyzeSelect.innerHTML = `<option value="">All projects</option>`;
     select.disabled = true;
     analyzeSelect.disabled = false;
+    updateSyncScopeHint("", "No projects available");
     meta.innerText = message || "No projects are available in this workspace.";
     document.getElementById("ticketInputSection").classList.add("hidden");
     return;
@@ -726,6 +744,7 @@ function renderProjectState(projects, message = "", selectedKey = "") {
     `<option value="">All projects</option>` + projectOptions;
   analyzeSelect.disabled = false;
   analyzeSelect.value = "";
+  updateSyncScopeHint("");
 
   const selectedProject = projects.find(
     (project) => project.key === select.value,
@@ -768,6 +787,7 @@ async function handleAnalyzeProjectChange(event) {
   } else {
     await chrome.storage.local.set({ selectedProjectKey: "" });
   }
+  updateSyncScopeHint(key);
   appendUiLog("info", `Analyze project filter: ${key || "all projects"}`);
 }
 

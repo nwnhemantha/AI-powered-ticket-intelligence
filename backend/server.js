@@ -1188,11 +1188,13 @@ app.post("/api/vectordb/index", async (req, res) => {
       req.body.workspaceId,
     );
 
-    const broadTokens = ["issue", "support", "request", "error", "bug", "task"];
+    // For indexing, fetch all issues (subject to project filter and search limit)
+    // instead of keyword-matched subsets.
+    const indexTokens = [];
     const issues = await fetchCandidateIssues(
       cloudId,
       jiraToken,
-      broadTokens,
+      indexTokens,
       projectKey,
     );
 

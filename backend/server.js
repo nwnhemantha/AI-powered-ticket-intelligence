@@ -6,6 +6,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const { getArchitecturePage } = require("./architecturePage");
 
 const app = express();
 app.use(express.json());
@@ -20,8 +21,9 @@ app.use(
   cors({
     origin(origin, callback) {
       if (!origin) {
-        if (process.env.NODE_ENV !== "production") return callback(null, true);
-        return callback(new Error("Origin required in production"));
+        // Allow requests without Origin (for direct browser navigation,
+        // health probes, and server-to-server checks).
+        return callback(null, true);
       }
       if (
         origin.startsWith("chrome-extension://") ||
@@ -1080,6 +1082,26 @@ app.post("/api/vectordb/index", async (req, res) => {
 // ── HEALTH CHECK ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
+app.get("/architecture", (_req, res) => {
+  res
+    .status(200)
+    .type("html")
+    .send(
+      getArchitecturePage({
+        port: process.env.PORT || 3000,
+        vectorDbUrl: VECTOR_DB_URL,
+        vectorDbCollection: VECTOR_DB_COLLECTION,
+        embeddingProvider: EMBEDDING_PROVIDER,
+        embeddingModel:
+          EMBEDDING_PROVIDER === "local"
+            ? process.env.LOCAL_EMBEDDING_MODEL ||
+              process.env.LOCAL_EMBEDDING_URL ||
+              "local"
+            : OPENAI_EMBEDDING_MODEL,
+      }),
+    );
+});
+
 app.get("/api/status", async (_req, res) => {
   let vectorDb = { connected: false, detail: "Not reachable" };
   const controller = new AbortController();
@@ -1120,4 +1142,5 @@ app.get("/api/status", async (_req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Backend running on http://0.0.0.0:${PORT}`);
+  console.log(`Architecture docs on http://0.0.0.0:${PORT}/architecture`);
 });

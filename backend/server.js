@@ -80,6 +80,57 @@ function extractBearerToken(req) {
   return auth.startsWith("Bearer ") ? auth.slice(7) : null;
 }
 
+function normalizeStatusName(statusValue) {
+  if (typeof statusValue === "string") return statusValue.trim();
+  if (statusValue && typeof statusValue === "object") {
+    const name = statusValue.name;
+    return typeof name === "string" ? name.trim() : "";
+  }
+  return "";
+}
+
+function parseStatusFilters(rawStatuses) {
+  if (!Array.isArray(rawStatuses)) return [];
+
+  const unique = new Map();
+  for (const value of rawStatuses) {
+    if (typeof value !== "string") continue;
+    const normalized = value.trim().slice(0, 80);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (!unique.has(key)) unique.set(key, normalized);
+  }
+
+  return Array.from(unique.values()).slice(0, 20);
+}
+
+function escapeJqlValue(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function buildStatusJqlPrefix(statuses) {
+  if (!Array.isArray(statuses) || !statuses.length) return "";
+  const quoted = statuses
+    .map((status) => `"${escapeJqlValue(status)}"`)
+    .join(", ");
+  return `status in (${quoted}) AND `;
+}
+
+function filterVectorResultsByStatuses(results, statuses) {
+  if (!Array.isArray(statuses) || !statuses.length) {
+    return Array.isArray(results) ? results : [];
+  }
+
+  const allowed = new Set(statuses.map((status) => status.toLowerCase()));
+  const source = Array.isArray(results) ? results : [];
+  return source.filter((result) => {
+    const payloadStatusName =
+      normalizeStatusName(result?.payload?.statusName) ||
+      normalizeStatusName(result?.payload?.status);
+    return allowed.has(payloadStatusName.toLowerCase());
+  });
+}
+
 // ── TEXT UTILITIES ────────────────────────────────────────────────────────────
 const STOP_WORDS = new Set([
   "a",
@@ -547,12 +598,14 @@ async function runJiraAnalysis(
   supportText,
   ticketTokens,
   projectKey,
+  statuses,
 ) {
   const candidateIssues = await fetchCandidateIssues(
     cloudId,
     jiraToken,
     ticketTokens,
     projectKey,
+    statuses,
   );
   const lexicalMatches = candidateIssues
     .map((issue) => scoreIssueMatch(issue, supportText, ticketTokens))
@@ -584,13 +637,14 @@ async function runJiraAnalysis(
   };
 }
 
-async function runVectorAnalysis(cloudId, supportText, projectKey) {
+async function runVectorAnalysis(cloudId, supportText, projectKey, statuses) {
   const embedding = await getEmbedding(supportText);
-  const results = await searchVectorDB(embedding, cloudId, projectKey, 10);
-  const rankedMatches = vectorResultsToMatches(results).slice(0, 5);
+  const results = await searchVectorDB(embedding, cloudId, projectKey, 50);
+  const filteredResults = filterVectorResultsByStatuses(results, statuses);
+  const rankedMatches = vectorResultsToMatches(filteredResults).slice(0, 5);
   return {
     rankedMatches,
-    candidateCount: results.length,
+    candidateCount: filteredResults.length,
     rankingMode: "vector",
   };
 }
@@ -659,11 +713,79 @@ async function fetchWorkspaceProjects(cloudId, jiraToken) {
   }));
 }
 
+async function fetchWorkspaceStatuses(cloudId, jiraToken, projectKey = "") {
+  if (projectKey) {
+    const res = await fetch(
+      `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${jiraToken}`,
+          Accept: "application/json",
+        },
+      },
+    );
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        data.errorMessages?.[0] || data.error || "Failed to load Jira statuses",
+      );
+    }
+
+    const statusesByType = Array.isArray(data) ? data : [];
+    const unique = new Map();
+
+    for (const issueTypeEntry of statusesByType) {
+      const statuses = Array.isArray(issueTypeEntry?.statuses)
+        ? issueTypeEntry.statuses
+        : [];
+      for (const status of statuses) {
+        const name = normalizeStatusName(status?.name);
+        if (!name) continue;
+        const key = name.toLowerCase();
+        if (!unique.has(key)) unique.set(key, name);
+      }
+    }
+
+    return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+  }
+
+  const res = await fetch(
+    `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/status`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${jiraToken}`,
+        Accept: "application/json",
+      },
+    },
+  );
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      data.errorMessages?.[0] || data.error || "Failed to load Jira statuses",
+    );
+  }
+
+  const statuses = Array.isArray(data) ? data : [];
+  const unique = new Map();
+  for (const status of statuses) {
+    const name = normalizeStatusName(status?.name);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (!unique.has(key)) unique.set(key, name);
+  }
+  return Array.from(unique.values()).sort((a, b) => a.localeCompare(b));
+}
+
 async function fetchCandidateIssues(
   cloudId,
   jiraToken,
   ticketTokens,
   projectKey,
+  statuses,
 ) {
   const SEARCH_PAGE_SIZE = Number(process.env.JIRA_SEARCH_PAGE_SIZE || 100);
   const SEARCH_CANDIDATE_LIMIT = Number(
@@ -730,10 +852,11 @@ async function fetchCandidateIssues(
     )
     .join(" OR ");
   const projectFilter = projectKey ? `project = "${projectKey}" AND ` : "";
+  const statusFilter = buildStatusJqlPrefix(statuses);
   // Include both open and completed tickets so historical resolved issues are
   // also available as matches.
   const keywordJql =
-    `${projectFilter}(${matchingClause || "summary is not EMPTY"}) ` +
+    `${projectFilter}${statusFilter}(${matchingClause || "summary is not EMPTY"}) ` +
     `ORDER BY updated DESC`;
 
   const keywordIssues = await performSearch(keywordJql);
@@ -743,14 +866,14 @@ async function fetchCandidateIssues(
 
   // Fallback: if tokenized JQL returns zero (common for very short/simple text
   // like single-word tickets), fetch recent issues and let local scoring filter.
-  const fallbackJql = `${projectFilter}summary is not EMPTY ORDER BY updated DESC`;
+  const fallbackJql = `${projectFilter}${statusFilter}summary is not EMPTY ORDER BY updated DESC`;
   return performSearch(fallbackJql);
 }
 
 // ── POST /api/process ─────────────────────────────────────────────────────────
 // Full pipeline: Jira-based, vector DB-based, or both analyses in parallel.
 // Receives: Authorization: Bearer <jira_access_token>,
-//           body: { supportText, workspaceId?, projectKey?,
+//           body: { supportText, workspaceId?, projectKey?, statuses?: string[],
 //                   analysisMode?: "jira" | "vectordb" | "both" }
 app.post("/api/process", async (req, res) => {
   if (!requireStrings(req.body, ["supportText"], res)) return;
@@ -775,6 +898,15 @@ app.post("/api/process", async (req, res) => {
     return res.status(400).json({ error: "Invalid projectKey format" });
   }
 
+  const statuses = parseStatusFilters(req.body.statuses);
+  if (
+    Array.isArray(req.body.statuses) &&
+    req.body.statuses.length &&
+    !statuses.length
+  ) {
+    return res.status(400).json({ error: "Invalid statuses format" });
+  }
+
   const analysisMode = ["jira", "vectordb", "both"].includes(
     req.body.analysisMode,
   )
@@ -795,10 +927,11 @@ app.post("/api/process", async (req, res) => {
             supportText,
             ticketTokens,
             projectKey,
+            statuses,
           )
         : Promise.resolve(null),
       analysisMode !== "jira"
-        ? runVectorAnalysis(cloudId, aiSafeSupportText, projectKey)
+        ? runVectorAnalysis(cloudId, aiSafeSupportText, projectKey, statuses)
         : Promise.resolve(null),
     ]);
 
@@ -1007,6 +1140,34 @@ app.get("/api/jira/projects", async (req, res) => {
   }
 });
 
+app.get("/api/jira/statuses", async (req, res) => {
+  const jiraToken = extractBearerToken(req);
+  if (!jiraToken)
+    return res
+      .status(401)
+      .json({ error: "Jira token required in Authorization header" });
+
+  const projectKey = String(req.query.projectKey || "").trim();
+  if (projectKey && !/^[A-Za-z][A-Za-z0-9]{0,49}$/.test(projectKey)) {
+    return res.status(400).json({ error: "Invalid projectKey format" });
+  }
+
+  try {
+    const { cloudId } = await getWorkspaceContext(
+      jiraToken,
+      req.query.workspaceId,
+    );
+    const statuses = await fetchWorkspaceStatuses(
+      cloudId,
+      jiraToken,
+      projectKey,
+    );
+    return res.json({ statuses });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /api/vectordb/index ──────────────────────────────────────────────────
 // Embeds and upserts Jira issues from the selected workspace into the vector DB.
 app.post("/api/vectordb/index", async (req, res) => {
@@ -1063,6 +1224,7 @@ app.post("/api/vectordb/index", async (req, res) => {
             projectKey: issue.key.split("-")[0],
             summary: issue.fields?.summary || "",
             status: issue.fields?.status || null,
+            statusName: normalizeStatusName(issue.fields?.status),
             priority: issue.fields?.priority || null,
             assignee: issue.fields?.assignee || null,
             labels: issue.fields?.labels || [],

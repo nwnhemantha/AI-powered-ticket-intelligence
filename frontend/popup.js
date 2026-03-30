@@ -15,6 +15,7 @@ let latestCandidateCount = 0;
 let latestSiteUrl = "";
 let availableWorkspaces = [];
 let availableProjects = [];
+let availableStatuses = [];
 let _aiStepTimers = [];
 let _pendingHide = false;
 let _stepsAllComplete = false;
@@ -35,6 +36,14 @@ document
 document
   .getElementById("analyzeProjectSelect")
   .addEventListener("change", handleAnalyzeProjectChange);
+document
+  .getElementById("analyzeStatusFilters")
+  .addEventListener("change", handleAnalyzeStatusChange);
+document
+  .getElementById("statusFilterToggle")
+  .addEventListener("click", toggleStatusFilterPanel);
+document.addEventListener("click", handleGlobalClickForStatusPanel);
+document.addEventListener("keydown", handleStatusPanelEscape);
 document
   .getElementById("modeJiraBtn")
   .addEventListener("click", handleModeButtonClick);
@@ -106,6 +115,7 @@ async function init() {
   } else {
     availableWorkspaces = [];
     renderWorkspaceState([], "Connect to Jira to load workspaces.");
+    renderStatusState([], "Connect to Jira to load statuses.");
   }
   await refreshConnectionStatus();
   setInterval(refreshConnectionStatus, 15000);
@@ -656,6 +666,7 @@ async function loadProjectsForWorkspace(workspaceId) {
   if (!token || !workspaceId) {
     availableProjects = [];
     renderProjectState([], "Select a workspace to load projects.");
+    renderStatusState([], "Select a workspace to load statuses.");
     return;
   }
 
@@ -692,6 +703,7 @@ async function loadProjectsForWorkspace(workspaceId) {
     }
 
     renderProjectState(availableProjects, "", projectKey);
+    await loadStatusesForWorkspace(workspaceId, "");
     appendUiLog(
       "info",
       `Loaded ${availableProjects.length} project(s) for selected workspace`,
@@ -699,6 +711,7 @@ async function loadProjectsForWorkspace(workspaceId) {
   } catch (err) {
     availableProjects = [];
     renderProjectState([], err.message || "Failed to load projects.");
+    renderStatusState([], "Failed to load Jira statuses.");
     showError(err.message || "Failed to load projects.");
   }
 }
@@ -713,6 +726,7 @@ function renderProjectLoading() {
   analyzeSelect.disabled = true;
   updateSyncScopeHint("", "Loading available projects");
   meta.innerText = "Fetching Jira projects for the selected workspace...";
+  renderStatusLoading();
   document.getElementById("ticketInputSection").classList.add("hidden");
 }
 
@@ -789,8 +803,189 @@ async function handleAnalyzeProjectChange(event) {
   } else {
     await chrome.storage.local.set({ selectedProjectKey: "" });
   }
+
+  const workspaceId = await getSelectedWorkspaceId();
+  await loadStatusesForWorkspace(workspaceId, key);
   updateSyncScopeHint(key);
   appendUiLog("info", `Analyze project filter: ${key || "all projects"}`);
+}
+
+function normalizeStatusName(statusValue) {
+  if (typeof statusValue === "string") return statusValue.trim();
+  if (statusValue && typeof statusValue === "object") {
+    const name = statusValue.name;
+    return typeof name === "string" ? name.trim() : "";
+  }
+  return "";
+}
+
+function getSelectedAnalyzeStatuses() {
+  const inputs = document.querySelectorAll(
+    '#analyzeStatusFilters input[name="analyzeStatus"]:checked',
+  );
+  return Array.from(inputs)
+    .map((el) => String(el.value || "").trim())
+    .filter(Boolean);
+}
+
+function isStatusPanelOpen() {
+  const panel = document.getElementById("statusFilterPanel");
+  return panel ? !panel.classList.contains("hidden") : false;
+}
+
+function setStatusPanelOpen(isOpen) {
+  const panel = document.getElementById("statusFilterPanel");
+  const toggle = document.getElementById("statusFilterToggle");
+  if (!panel || !toggle) return;
+
+  panel.classList.toggle("hidden", !isOpen);
+  toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  toggle.classList.toggle("status-filter-open", isOpen);
+}
+
+function toggleStatusFilterPanel(event) {
+  if (event) event.stopPropagation();
+  setStatusPanelOpen(!isStatusPanelOpen());
+}
+
+function handleGlobalClickForStatusPanel(event) {
+  const container = document.getElementById("statusFilterFloat");
+  if (!container) return;
+  if (container.contains(event.target)) return;
+  setStatusPanelOpen(false);
+}
+
+function handleStatusPanelEscape(event) {
+  if (event.key !== "Escape") return;
+  setStatusPanelOpen(false);
+}
+
+function updateStatusFilterToggleLabel() {
+  const toggle = document.getElementById("statusFilterToggle");
+  if (!toggle) return;
+
+  const selectedCount = getSelectedAnalyzeStatuses().length;
+  const total = availableStatuses.length;
+  if (!total) {
+    toggle.innerText = "Status filters";
+    return;
+  }
+
+  toggle.innerText = `Status filters (${selectedCount}/${total})`;
+}
+
+function renderStatusLoading() {
+  const wrapper = document.getElementById("analyzeStatusFilters");
+  const meta = document.getElementById("analyzeStatusMeta");
+  wrapper.innerHTML =
+    '<span class="status-filter-placeholder">Loading statuses...</span>';
+  meta.innerText = "Fetching Jira workflow statuses...";
+  updateStatusFilterToggleLabel();
+}
+
+function renderStatusState(statuses, message = "", selectedStatuses = []) {
+  const wrapper = document.getElementById("analyzeStatusFilters");
+  const meta = document.getElementById("analyzeStatusMeta");
+  availableStatuses = Array.isArray(statuses) ? statuses : [];
+
+  if (!availableStatuses.length) {
+    wrapper.innerHTML =
+      '<span class="status-filter-placeholder">No statuses available</span>';
+    meta.innerText = message || "All statuses will be considered.";
+    updateStatusFilterToggleLabel();
+    setStatusPanelOpen(false);
+    return;
+  }
+
+  const preserved = selectedStatuses.length
+    ? selectedStatuses
+    : getSelectedAnalyzeStatuses();
+  const selectedSet = new Set(preserved.map((status) => status.toLowerCase()));
+  const hasExplicitSelection = selectedSet.size > 0;
+
+  wrapper.innerHTML = availableStatuses
+    .map((statusName) => {
+      const checked = hasExplicitSelection
+        ? selectedSet.has(statusName.toLowerCase())
+        : true;
+      return (
+        `<label class="status-filter-option">` +
+        `<input type="checkbox" name="analyzeStatus" value="${escapeHtml(statusName)}" ${checked ? "checked" : ""} />` +
+        `<span>${escapeHtml(statusName)}</span>` +
+        `</label>`
+      );
+    })
+    .join("");
+
+  const selectedCount = getSelectedAnalyzeStatuses().length;
+  meta.innerText =
+    message ||
+    `${selectedCount}/${availableStatuses.length} status filters selected.`;
+  updateStatusFilterToggleLabel();
+}
+
+async function loadStatusesForWorkspace(workspaceId, projectKey = "") {
+  const { token } = await chrome.storage.local.get("token");
+
+  if (!token || !workspaceId) {
+    renderStatusState([], "Select a workspace to load statuses.");
+    return;
+  }
+
+  const selectedBeforeRefresh = getSelectedAnalyzeStatuses();
+  renderStatusLoading();
+
+  try {
+    const query = new URLSearchParams({ workspaceId });
+    if (projectKey) {
+      query.set("projectKey", projectKey);
+    }
+
+    const res = await fetch(
+      `${BACKEND_BASE_URL}/api/jira/statuses?${query.toString()}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      if (isLikelyAuthFailure(res.status, err.error)) {
+        await autoLogoutForExpiredSession();
+        return;
+      }
+      throw new Error(err.error || `Failed to load statuses (${res.status})`);
+    }
+
+    const data = await res.json();
+    const statuses = Array.isArray(data.statuses)
+      ? data.statuses
+          .map((status) => normalizeStatusName(status))
+          .filter(Boolean)
+      : [];
+    renderStatusState(statuses, "", selectedBeforeRefresh);
+    appendUiLog(
+      "info",
+      `Loaded ${statuses.length} status filter option(s)${projectKey ? ` for project ${projectKey}` : ""}`,
+    );
+  } catch (err) {
+    renderStatusState([], err.message || "Failed to load Jira statuses.");
+    appendUiLog("warn", err.message || "Failed to load Jira statuses.");
+  }
+}
+
+function handleAnalyzeStatusChange(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  if (target.name !== "analyzeStatus") return;
+
+  const selected = getSelectedAnalyzeStatuses();
+  const meta = document.getElementById("analyzeStatusMeta");
+  meta.innerText = `${selected.length}/${availableStatuses.length} status filters selected.`;
+  updateStatusFilterToggleLabel();
 }
 
 // ── MAIN ANALYSIS (via backend) ───────────────────────────────────────────────
@@ -819,8 +1014,17 @@ async function validateSupportTicket() {
     showError("No Jira workspace found. Please reconnect.");
     return;
   }
+  const selectedStatuses = getSelectedAnalyzeStatuses();
+  if (availableStatuses.length && !selectedStatuses.length) {
+    showError("Select at least one Jira status before running analysis.");
+    return;
+  }
+
   prefillDraftFromSupportText(supportText);
-  appendUiLog("info", `AI analysis started (${supportText.length} chars)`);
+  appendUiLog(
+    "info",
+    `AI analysis started (${supportText.length} chars) with ${selectedStatuses.length || "all"} status filter(s)`,
+  );
   setLoading(true);
   document.getElementById("loading").innerText = "Processing...";
 
@@ -838,6 +1042,7 @@ async function validateSupportTicket() {
           workspaceId: selectedWorkspaceId,
           projectKey:
             document.getElementById("analyzeProjectSelect").value || "",
+          statuses: selectedStatuses,
           analysisMode,
         }),
       },

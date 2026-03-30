@@ -597,6 +597,132 @@ body.motion-ready .mode-btn-active {
   margin-bottom: 6px;
 }
 
+.status-filter-float {
+  position: relative;
+  margin-top: 4px;
+}
+
+.status-filter-toggle {
+  width: 100%;
+  border: 1px solid var(--line-2);
+  background: var(--bg-3);
+  color: var(--text-2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.status-filter-toggle:hover {
+  border-color: var(--brand-1);
+  background: color-mix(in srgb, var(--bg-3) 80%, var(--brand-1) 20%);
+}
+
+.status-filter-toggle.status-filter-open {
+  border-color: var(--brand-1);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-1) 45%, transparent);
+}
+
+.status-filter-panel {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 190px;
+  overflow: auto;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--bg-2) 95%, var(--bg-3));
+  box-shadow: 0 16px 26px rgba(2, 6, 23, 0.45);
+}
+
+.status-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.status-filter-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-3) 82%, transparent);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.status-filter-option:has(input[type="checkbox"]:checked) {
+  border-color: var(--brand-1);
+  background: color-mix(in srgb, var(--brand-1) 26%, var(--bg-3));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand-1) 35%, transparent);
+  color: #dbeafe;
+}
+
+.status-filter-option input[type="checkbox"] {
+  margin: 0;
+}
+
+.status-filter-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-filter-placeholder {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--text-3);
+  padding: 6px 2px;
+}
+
+.status-filter-meta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+body[data-theme="light"] .status-filter-toggle {
+  background: #ffffff;
+  color: #0f172a;
+  border-color: #b9c8de;
+}
+
+body[data-theme="light"] .status-filter-toggle:hover {
+  background: #eef4ff;
+}
+
+body[data-theme="light"] .status-filter-panel {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 14px 24px rgba(15, 23, 42, 0.2);
+}
+
+body[data-theme="light"] .status-filter-option {
+  background: #f8fbff;
+  border-color: #c7d4ea;
+  color: #1e293b;
+}
+
+body[data-theme="light"]
+  .status-filter-option:has(input[type="checkbox"]:checked) {
+  border-color: #60a5fa;
+  background: #dbeafe;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.26);
+  color: #0f172a;
+}
+
+body[data-theme="light"] .status-filter-option input[type="checkbox"] {
+  accent-color: #2563eb;
+}
+
 textarea {
   width: 100%;
   resize: vertical;

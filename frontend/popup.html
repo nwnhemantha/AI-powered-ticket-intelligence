@@ -181,6 +181,29 @@
               <option value="">All projects</option>
             </select>
           </div>
+          <div class="field-wrapper">
+            <label class="support-label">Jira Status</label>
+            <div class="status-filter-float" id="statusFilterFloat">
+              <button
+                id="statusFilterToggle"
+                type="button"
+                class="status-filter-toggle"
+                aria-haspopup="true"
+                aria-expanded="false"
+                aria-controls="statusFilterPanel"
+              >
+                Status filters
+              </button>
+              <div id="statusFilterPanel" class="status-filter-panel hidden">
+                <div id="analyzeStatusFilters" class="status-filter-grid">
+                  <span class="status-filter-placeholder"
+                    >Loading statuses...</span
+                  >
+                </div>
+              </div>
+            </div>
+            <div id="analyzeStatusMeta" class="status-filter-meta"></div>
+          </div>
           <div id="ticketInputSection" class="hidden">
             <div class="field-wrapper">
               <label class="support-label" for="supportTicketInput"

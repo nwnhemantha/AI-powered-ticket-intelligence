@@ -568,7 +568,9 @@ async function handleModeButtonClick(event) {
 }
 
 function getSyncScopeLabelFromProjectKey(projectKey = "") {
-  return projectKey ? `Project ${projectKey}` : "All projects in selected workspace";
+  return projectKey
+    ? `Project ${projectKey}`
+    : "All projects in selected workspace";
 }
 
 function updateSyncScopeHint(projectKey = "", customLabel = "") {
